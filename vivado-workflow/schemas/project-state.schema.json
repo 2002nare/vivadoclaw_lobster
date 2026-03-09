@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VivadoProjectState",
+  "description": "Vivado project state snapshot for AI review",
+  "type": "object",
+  "required": ["project", "sources", "constraints", "top_module", "compile_order", "messages"],
+  "properties": {
+    "project": {
+      "type": "object",
+      "required": ["name", "part", "directory"],
+      "properties": {
+        "name": { "type": "string" },
+        "part": { "type": "string" },
+        "directory": { "type": "string" },
+        "board_part": { "type": "string", "default": "" }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "type", "library"],
+        "properties": {
+          "path": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["verilog", "systemverilog", "vhdl"]
+          },
+          "library": { "type": "string", "default": "work" },
+          "fileset": { "type": "string", "default": "sources_1" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string" },
+          "used_in": {
+            "type": "array",
+            "items": { "type": "string" },
+            "default": ["synthesis", "implementation"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "top_module": {
+      "type": ["string", "null"]
+    },
+    "compile_order": {
+      "type": "object",
+      "required": ["status", "files"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["resolved", "unresolved", "error"]
+        },
+        "files": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "text"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["info", "warning", "error", "critical_warning"]
+          },
+          "text": { "type": "string" },
+          "id": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
