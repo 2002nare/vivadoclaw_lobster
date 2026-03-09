@@ -33,6 +33,14 @@ fi
 SCRIPT_ARG="$1"
 log "--- START: $SCRIPT_ARG ---"
 log "CWD: $(pwd)"
+
+# Validate VIVADO_PROJECT_DIR is absolute
+if [[ -n "${VIVADO_PROJECT_DIR:-}" && "${VIVADO_PROJECT_DIR}" != /* ]]; then
+  log "ERROR: VIVADO_PROJECT_DIR must be an absolute path: $VIVADO_PROJECT_DIR"
+  echo '{"ok": false, "error": "VIVADO_PROJECT_DIR must be an absolute path"}'
+  exit 1
+fi
+
 log "VIVADO_PROJECT_DIR=${VIVADO_PROJECT_DIR:-<unset>}"
 log "VIVADO_PROJECT_NAME=${VIVADO_PROJECT_NAME:-<unset>}"
 log "VIVADO_PART=${VIVADO_PART:-<unset>}"

@@ -1,0 +1,32 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VivadoSimPreflight",
+  "description": "Preflight check result before launching Vivado simulation",
+  "type": "object",
+  "required": ["decision", "reason", "issues"],
+  "properties": {
+    "decision": {
+      "type": "string",
+      "enum": ["proceed", "abort"]
+    },
+    "reason": {
+      "type": "string"
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "message"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["error", "warning"]
+          },
+          "message": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

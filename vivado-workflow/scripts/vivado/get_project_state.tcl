@@ -52,7 +52,7 @@ proc get_project_state {} {
     set source_items {}
     set src_files [get_files -of_objects [get_filesets sources_1] -filter {FILE_TYPE =~ "*Verilog*" || FILE_TYPE =~ "*VHDL*"}]
     foreach f $src_files {
-        set fpath [get_property FILE_NAME_WITH_PATH $f]
+        set fpath [get_property NAME $f]
         set ftype_raw [get_property FILE_TYPE $f]
         set library "work"
         catch {set library [get_property LIBRARY $f]}
@@ -86,7 +86,7 @@ proc get_project_state {} {
     foreach cfs $constr_filesets {
         set xdc_files [get_files -of_objects $cfs -filter {FILE_TYPE == "XDC"}]
         foreach f $xdc_files {
-            set fpath [get_property FILE_NAME_WITH_PATH $f]
+            set fpath [get_property NAME $f]
             set used_in {}
             catch {set used_in [get_property USED_IN $f]}
 
@@ -156,7 +156,7 @@ proc get_project_state {} {
         set top_name [string trim $top_module "\""]
         set found_top 0
         foreach f $src_files {
-            set fname [file tail [get_property FILE_NAME_WITH_PATH $f]]
+            set fname [file tail [get_property NAME $f]]
             set fname_noext [file rootname $fname]
             if {$fname_noext eq $top_name} {
                 set found_top 1

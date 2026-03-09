@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# llm_review.sh — Call llm-task via openclaw.invoke.js
+# llm_review.sh — Call llm-task via OpenClaw API (curl)
 #
 # Usage: echo "<project_state_json>" | llm_review.sh <prompt_file> <schema_file>
 # Environment:
@@ -16,21 +16,38 @@ PROJECT_STATE=$(cat)
 PROMPT=$(cat "$PROMPT_FILE")
 SCHEMA=$(cat "$SCHEMA_FILE")
 
-# Build args JSON with jq
-ARGS_JSON=$(jq -n \
+# Build request body with jq
+REQUEST_BODY=$(jq -n \
   --arg prompt "$PROMPT" \
   --arg input "$PROJECT_STATE" \
   --argjson schema "$SCHEMA" \
   '{
-    prompt: $prompt,
-    input: $input,
-    schema: $schema,
-    maxTokens: 2000
+    tool: "llm-task",
+    action: "json",
+    args: {
+      prompt: $prompt,
+      input: $input,
+      schema: $schema,
+      maxTokens: 2000
+    }
   }')
 
-# Call via openclaw.invoke.js
-node /home/appuser/lobster/bin/openclaw.invoke.js \
-  --tool llm-task \
-  --action json \
-  --args-json "$ARGS_JSON"
+# Call OpenClaw API directly
+RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+  -X POST "${OPENCLAW_URL}/tools/invoke" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${OPENCLAW_TOKEN}" \
+  -d "$REQUEST_BODY")
 
+HTTP_STATUS=$(echo "$RESPONSE" | tail -1 | sed 's/HTTP_STATUS://')
+BODY=$(echo "$RESPONSE" | sed '$d')
+
+if [ "$HTTP_STATUS" -ge 400 ] 2>/dev/null; then
+  echo "llm_review.sh: HTTP $HTTP_STATUS" >&2
+  echo "$BODY" >&2
+  exit 1
+fi
+
+# Extract the JSON text from the response
+# Response format: {"ok":true,"result":{"content":[{"type":"text","text":"..."}],...}}
+echo "$BODY" | jq -r '.result.content[0].text // .result[0].content[0].text // empty'

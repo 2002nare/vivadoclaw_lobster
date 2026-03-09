@@ -19,14 +19,14 @@ args:
   part:
     description: "FPGA part number (e.g., xc7a35tcpg236-1)"
   project_dir:
-    description: "Directory to create/open the project in"
+    description: "Absolute path to project directory (e.g., /home/appuser/projects/my_proj)"
   top_module:
     description: "Top module name"
   sources_json:
-    description: "JSON array of source file objects [{path, type, library}]"
+    description: "JSON array of source file objects. All paths must be absolute. [{path, type, library}]"
   constraints_json:
     default: "[]"
-    description: "JSON array of constraint file objects [{path}]"
+    description: "JSON array of constraint file objects. All paths must be absolute. [{path}]"
 
 env:
   VIVADO_PROJECT_NAME: "${project_name}"
@@ -37,6 +37,18 @@ env:
   VIVADO_CONSTRAINTS_JSON: "${constraints_json}"
 
 steps:
+  # --- Env check: ensure OpenClaw connection vars are set ---
+  - id: check_env
+    command: |
+      export OPENCLAW_URL="${OPENCLAW_URL:-http://127.0.0.1:18789}"
+      export OPENCLAW_TOKEN="${OPENCLAW_TOKEN:-$(cat ~/.openclaw/openclaw.json 2>/dev/null | grep -o '"token"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')}"
+      if [ -z "$OPENCLAW_TOKEN" ]; then
+        echo "ERROR: OPENCLAW_TOKEN is not set and could not be read from ~/.openclaw/openclaw.json" >&2
+        exit 1
+      fi
+      echo "OPENCLAW_URL=$OPENCLAW_URL"
+      echo "OPENCLAW_TOKEN is set (${#OPENCLAW_TOKEN} chars)"
+
   # --- Phase 1: Create project ---
   - id: create_project
     command: "bash scripts/vivado_run.sh scripts/vivado/create_project.tcl"

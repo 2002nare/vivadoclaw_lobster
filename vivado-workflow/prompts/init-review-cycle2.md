@@ -25,12 +25,32 @@ Your task is stricter than the first review: verify that ALL previously identifi
 - Be MORE strict than the first review
 - If any error-level issue remains, status MUST be "fail"
 - Only set status to "pass" if the project is genuinely ready for synthesis
-- Do NOT propose patches in this second review — if issues remain, report them as-is
-  - The workflow will surface these unresolved issues to the user
-- Include a concise `summary` comparing before/after state
+- Do NOT propose patches in this second review — report unresolved issues as-is
+- The `patches` array MUST be empty
 
-## Output Rules
+## Output Format
 
-- Output ONLY valid JSON matching the init-review schema
-- `patches` array should be EMPTY in this second review
-- Focus the `summary` on whether the first review's issues were resolved
+You MUST output ONLY valid JSON with this exact structure:
+
+```json
+{
+  "status": "pass" | "fail" | "warning",
+  "issues": [
+    {
+      "severity": "error" | "warning" | "info",
+      "category": "missing_source" | "missing_constraint" | "wrong_top" | "compile_order" | "part_mismatch" | "duplicate_file" | "unused_file" | "inferred_memory" | "general",
+      "message": "description of the issue",
+      "related_file": "/path/to/file (optional)"
+    }
+  ],
+  "patches": [],
+  "summary": "1-2 sentence comparison of before vs after state"
+}
+```
+
+## Rules
+
+- `status`: "pass" only if project is genuinely ready for synthesis, "fail" if any error remains
+- `category`: Use one of the preferred values listed above. If none fit, use "general"
+- `patches`: MUST be empty array `[]` — no patches in second review
+- `summary`: Focus on whether first review's issues were resolved
