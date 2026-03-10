@@ -6,7 +6,7 @@
 
 AI-assisted Vivado FPGA workflows, built for **[vivadoclaw.ai](https://vivadoclaw.ai)**.
 
-> **Alpha** — Init and simulation workflows work end-to-end. Synthesis/implementation coming next.
+> **Alpha** — Vivado init/simulation and Vitis HLS init workflows now work end-to-end. Synthesis/implementation/cosim/export workflows are the next layer.
 
 ## Try it on vivadoclaw.ai
 
@@ -73,20 +73,51 @@ OpenClaw  --->  Lobster Workflow  --->  step 1: Tcl Script (Vivado action)
 
 ## Workflows
 
+### Vivado
+
 | Workflow | Status | Description |
 |----------|--------|-------------|
-| `init.lobster` | **Done** | Create project, add sources/constraints, AI review |
-| `sim.lobster` | **Done** | Behavioral simulation with AI-assisted review |
-| `synth.lobster` | Planned | Run synthesis with AI-assisted error diagnosis |
-| `impl.lobster` | Planned | Place & route with timing review |
-| `bitstream.lobster` | Planned | Bitstream generation with final checks |
+| `vivado-workflow/workflows/init.lobster` | **Done** | Create project, add sources/constraints, AI review |
+| `vivado-workflow/workflows/sim.lobster` | **Done** | Behavioral simulation with AI-assisted review |
+| `vivado-workflow/workflows/synth.lobster` | Planned | Run synthesis with AI-assisted error diagnosis |
+| `vivado-workflow/workflows/impl.lobster` | Planned | Place & route with timing review |
+| `vivado-workflow/workflows/bitstream.lobster` | Planned | Bitstream generation with final checks |
+
+### Vitis HLS
+
+| Workflow | Status | Description |
+|----------|--------|-------------|
+| `vitis-workflow/workflows/init-core.lobster` | **Done** | Stable HLS project initialization with result-file step handoff |
+| `vitis-workflow/workflows/init.lobster` | **Done** | HLS init plus AI review/auto-patch layer |
+| `vitis-workflow/workflows/sim.lobster` | Planned | C simulation (`csim_design`) |
+| `vitis-workflow/workflows/synth.lobster` | Planned | HLS synthesis (`csynth_design`) |
+| `vitis-workflow/workflows/cosim.lobster` | Planned | C/RTL co-simulation (`cosim_design`) |
+| `vitis-workflow/workflows/export.lobster` | Planned | RTL/IP export (`export_design`) |
+
+## Vitis HLS Notes
+
+Recent validation work established a few practical rules:
+
+- `vitis_hls -f <script.tcl>` works reliably in batch mode
+- the stable init path is `vitis-workflow/workflows/init-core.lobster`
+- result-file handoff between steps is more reliable than scraping JSON from stdout
+- the review path in `vitis-workflow/workflows/init.lobster` now also completes end-to-end for a validated `vector_add` example
+
+See `vitis-workflow/docs/init-workflow.md` for details.
 
 ## Structure
 
 ```
 vivado-workflow/
-  workflows/        Lobster workflow definitions
+  workflows/        Lobster workflow definitions for Vivado
   scripts/          Shell wrappers + Tcl scripts (one per Vivado action)
+  schemas/          JSON schemas for structured LLM output
+  prompts/          LLM review prompts
+  docs/             Per-workflow documentation
+
+vitis-workflow/
+  workflows/        Lobster workflow definitions for Vitis HLS
+  scripts/          Shell wrappers + Tcl scripts (one per HLS action)
   schemas/          JSON schemas for structured LLM output
   prompts/          LLM review prompts
   docs/             Per-workflow documentation
