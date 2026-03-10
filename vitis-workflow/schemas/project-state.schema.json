@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VitisHLSProjectState",
+  "description": "Vitis HLS project state snapshot for AI review",
+  "type": "object",
+  "required": ["project", "sources", "testbench_files", "solution", "top_function", "messages"],
+  "properties": {
+    "project": {
+      "type": "object",
+      "required": ["name", "directory"],
+      "properties": {
+        "name": { "type": "string" },
+        "directory": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "type"],
+        "properties": {
+          "path": { "type": "string" },
+          "type": {
+            "type": "string",
+            "enum": ["c", "cpp", "header"]
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "testbench_files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path"],
+        "properties": {
+          "path": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "solution": {
+      "type": ["object", "null"],
+      "properties": {
+        "name": { "type": "string" },
+        "part": { "type": "string" },
+        "clock_period_ns": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "top_function": {
+      "type": ["string", "null"]
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "text"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["info", "warning", "error"]
+          },
+          "text": { "type": "string" },
+          "id": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}
