@@ -1,14 +1,21 @@
-# add_sources.tcl — Add C/C++ source files to Vitis HLS project
-# Environment:
-#   VITIS_HLS_PROJECT_DIR  — parent directory containing project
-#   VITIS_HLS_PROJECT_NAME — project name
-#   VITIS_HLS_SOURCES_JSON — JSON array of source objects
-#     [{"path": "/abs/path/to/file.cpp"}, ...]
-# Output (stdout): JSON with added file count
+# add_sources.tcl — Add C/C++ source files to Vitis HLS project and write result JSON to file
 
 proc json_escape {s} {
     set s [string map {\\ \\\\ \" \\\" \n \\n \r \\r \t \\t} $s]
-    return "\"$s\""
+    return $s
+}
+
+proc write_result {json_text} {
+    set result_path $::env(VITIS_HLS_RESULT_JSON)
+    set fp [open $result_path "w"]
+    puts $fp $json_text
+    close $fp
+}
+
+proc fail {msg} {
+    set escaped [json_escape $msg]
+    write_result "{\"ok\": false, \"error\": \"$escaped\"}"
+    exit 1
 }
 
 proc find_json_objects {input} {
@@ -43,9 +50,18 @@ proc json_get {obj key} {
 }
 
 proc main {} {
+    if {![info exists ::env(VITIS_HLS_PROJECT_DIR)]} {
+        fail "VITIS_HLS_PROJECT_DIR is not set"
+    }
+    if {![info exists ::env(VITIS_HLS_PROJECT_NAME)]} {
+        fail "VITIS_HLS_PROJECT_NAME is not set"
+    }
+    if {![info exists ::env(VITIS_HLS_SOURCES_JSON)]} {
+        fail "VITIS_HLS_SOURCES_JSON is not set"
+    }
+
     set project_dir $::env(VITIS_HLS_PROJECT_DIR)
     set name $::env(VITIS_HLS_PROJECT_NAME)
-
     open_project "$project_dir/$name"
 
     set sources_json $::env(VITIS_HLS_SOURCES_JSON)
@@ -69,14 +85,15 @@ proc main {} {
     close_project
 
     if {[llength $errors] > 0} {
-        set err_str [join $errors "; "]
-        puts "{\"ok\": true, \"data\": {\"added\": $added, \"warnings\": [json_escape $err_str]}}"
+        set err_str [json_escape [join $errors "; "]]
+        write_result "{\"ok\": true, \"data\": {\"added\": $added, \"warnings\": \"$err_str\"}}"
     } else {
-        puts "{\"ok\": true, \"data\": {\"added\": $added}}"
+        write_result "{\"ok\": true, \"data\": {\"added\": $added}}"
     }
+
+    exit 0
 }
 
 if {[catch {main} err]} {
-    set escaped [string map {\\ \\\\ \" \\\" \n \\n \r \\r \t \\t} $err]
-    puts "{\"ok\": false, \"error\": \"$escaped\"}"
+    fail $err
 }

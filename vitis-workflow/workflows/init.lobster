@@ -1,12 +1,16 @@
-# init.lobster — Vitis HLS Project Initialization Workflow
+# init.lobster — Vitis HLS Project Initialization Workflow with AI review
 #
-# Flow: create project → add sources → add testbench → create solution → set top
-#       → state capture → AI review → auto-patch → re-review → final state
+# Recommended default:
+#   Use workflows/init-core.lobster first for stable project initialization.
 #
-# Max 2 review cycles. Patches auto-applied (no approval gate).
-# All data passed via environment variables (Vitis HLS batch mode doesn't forward stdin).
+# This workflow layers AI review and auto-patching on top of the core init path.
+# It is more powerful, but also more dependent on OpenClaw connectivity,
+# review prompts, schemas, and patch-application behavior.
 #
-# Required env vars (set before running):
+# Flow:
+#   core init → state capture → AI review → auto-patch → re-review → final state
+#
+# Required env vars (set before running this review workflow):
 #   OPENCLAW_URL   — OpenClaw gateway URL
 #   OPENCLAW_TOKEN — Bearer token for OpenClaw API
 
@@ -57,27 +61,23 @@ steps:
       echo "OPENCLAW_URL=$OPENCLAW_URL"
       echo "OPENCLAW_TOKEN is set (${#OPENCLAW_TOKEN} chars)"
 
-  # --- Phase 1: Create HLS project ---
+  # --- Phase 1: Stable core init ---
   - id: create_project
     command: "bash scripts/vitis_hls_run.sh scripts/vitis_hls/create_project.tcl"
 
-  # --- Phase 1: Add C/C++ source files ---
   - id: add_sources
     command: "bash scripts/vitis_hls_run.sh scripts/vitis_hls/add_sources.tcl"
 
-  # --- Phase 1: Add testbench files ---
   - id: add_testbench
     command: "bash scripts/vitis_hls_run.sh scripts/vitis_hls/add_testbench.tcl"
 
-  # --- Phase 1: Create solution with part and clock ---
   - id: create_solution
     command: "bash scripts/vitis_hls_run.sh scripts/vitis_hls/create_solution.tcl"
 
-  # --- Phase 1: Set top function ---
   - id: set_top
     command: "bash scripts/vitis_hls_run.sh scripts/vitis_hls/set_top.tcl"
 
-  # --- Phase 2: Capture project state ---
+  # --- Phase 2: State capture ---
   - id: state1
     command: "bash scripts/vitis_hls_run.sh scripts/vitis_hls/get_project_state.tcl"
 
@@ -87,7 +87,6 @@ steps:
     stdin: $state1.stdout
 
   # --- Phase 4: Auto-apply patches ---
-  # If status == "pass", patches array is empty → apply_patch is a no-op
   - id: apply_patches
     command: "bash scripts/vitis_hls_run.sh scripts/vitis_hls/apply_patch.tcl"
     env:

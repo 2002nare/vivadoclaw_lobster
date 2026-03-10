@@ -2,16 +2,25 @@
 # Environment:
 #   VITIS_HLS_PROJECT_DIR   — parent directory containing project
 #   VITIS_HLS_PROJECT_NAME  — project name
-#   VITIS_HLS_PATCHES_JSON  — JSON string containing patches array from AI review
-#     [{"action": "add_source", "params": {"path": "..."}, "reason": "..."}, ...]
-# Output (stdout): JSON with applied/failed counts
-#
-# Supported actions: add_source, remove_source, add_testbench,
-#                    remove_testbench, set_top, set_part, set_clock
+#   VITIS_HLS_PATCHES_JSON  — JSON string containing review result and/or patches array
+# Output: result JSON written to VITIS_HLS_RESULT_JSON
 
 proc json_escape {s} {
     set s [string map {\\ \\\\ \" \\\" \n \\n \r \\r \t \\t} $s]
-    return "\"$s\""
+    return $s
+}
+
+proc write_result {json_text} {
+    set result_path $::env(VITIS_HLS_RESULT_JSON)
+    set fp [open $result_path "w"]
+    puts $fp $json_text
+    close $fp
+}
+
+proc fail {msg} {
+    set escaped [json_escape $msg]
+    write_result "{\"ok\": false, \"error\": \"$escaped\"}"
+    exit 1
 }
 
 proc find_json_objects {input} {
@@ -55,8 +64,14 @@ proc parse_patch_actions {input} {
 
         set path [json_get $obj "path"]
         set function_name [json_get $obj "function_name"]
+        if {$function_name eq ""} {
+            set function_name [json_get $obj "top_function"]
+        }
         set part [json_get $obj "part"]
         set clock_period [json_get $obj "clock_period_ns"]
+        if {$clock_period eq ""} {
+            set clock_period [json_get $obj "clock_period"]
+        }
         set reason [json_get $obj "reason"]
 
         lappend actions [list $action $path $function_name $part $clock_period $reason]
@@ -65,18 +80,35 @@ proc parse_patch_actions {input} {
 }
 
 proc main {} {
-    set project_dir $::env(VITIS_HLS_PROJECT_DIR)
-    set name $::env(VITIS_HLS_PROJECT_NAME)
-
-    set proj_path "$project_dir/$name"
-    if {![file isdirectory $proj_path]} {
-        puts "{\"ok\": false, \"error\": \"Project directory not found: $proj_path\"}"
-        return
+    if {![info exists ::env(VITIS_HLS_PROJECT_DIR)]} {
+        fail "VITIS_HLS_PROJECT_DIR is not set"
     }
-    open_project $proj_path
+    if {![info exists ::env(VITIS_HLS_PROJECT_NAME)]} {
+        fail "VITIS_HLS_PROJECT_NAME is not set"
+    }
+    if {![info exists ::env(VITIS_HLS_PATCHES_JSON)]} {
+        write_result "{\"ok\": true, \"data\": {\"applied\": 0, \"failed\": 0, \"errors\": []}}"
+        exit 0
+    }
 
     set patches_json $::env(VITIS_HLS_PATCHES_JSON)
     set actions [parse_patch_actions $patches_json]
+
+    # Common no-op path: review returned status=pass with patches=[]
+    if {[llength $actions] == 0} {
+        write_result "{\"ok\": true, \"data\": {\"applied\": 0, \"failed\": 0, \"errors\": []}}"
+        exit 0
+    }
+
+    set project_dir $::env(VITIS_HLS_PROJECT_DIR)
+    set name $::env(VITIS_HLS_PROJECT_NAME)
+    set proj_path "$project_dir/$name"
+    if {![file isdirectory $proj_path]} {
+        fail "Project directory not found: $proj_path"
+    }
+
+    open_project $proj_path
+
     set applied 0
     set failed 0
     set errors {}
@@ -87,23 +119,18 @@ proc main {} {
         set function_name [lindex $act 2]
         set part [lindex $act 3]
         set clock_period [lindex $act 4]
-        set reason [lindex $act 5]
 
         if {[catch {
             switch -exact $action {
                 "add_source" {
-                    if {![file exists $path]} {
-                        error "File not found: $path"
-                    }
+                    if {![file exists $path]} { error "File not found: $path" }
                     add_files $path
                 }
                 "remove_source" {
                     remove_files $path
                 }
                 "add_testbench" {
-                    if {![file exists $path]} {
-                        error "File not found: $path"
-                    }
+                    if {![file exists $path]} { error "File not found: $path" }
                     add_files -tb $path
                 }
                 "remove_testbench" {
@@ -143,19 +170,20 @@ proc main {} {
 
     close_project
 
-    set err_json "\[\]"
     if {[llength $errors] > 0} {
         set err_items {}
         foreach e $errors {
-            lappend err_items [json_escape $e]
+            lappend err_items "\"[json_escape $e]\""
         }
         set err_json "\[[join $err_items ", "]\]"
+    } else {
+        set err_json "[]"
     }
 
-    puts "{\"ok\": true, \"data\": {\"applied\": $applied, \"failed\": $failed, \"errors\": $err_json}}"
+    write_result "{\"ok\": true, \"data\": {\"applied\": $applied, \"failed\": $failed, \"errors\": $err_json}}"
+    exit 0
 }
 
 if {[catch {main} err]} {
-    set escaped [string map {\\ \\\\ \" \\\" \n \\n \r \\r \t \\t} $err]
-    puts "{\"ok\": false, \"error\": \"$escaped\"}"
+    fail $err
 }
