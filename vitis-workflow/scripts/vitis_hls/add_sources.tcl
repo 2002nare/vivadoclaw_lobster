@@ -78,7 +78,8 @@ proc main {} {
             continue
         }
 
-        add_files $path
+        set normalized_path [file normalize $path]
+        add_files $normalized_path
         incr added
     }
 
