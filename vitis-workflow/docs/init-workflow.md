@@ -148,7 +148,7 @@ After `init-core` stabilization, the next logical workflows are:
 1. `sim.lobster` for `csim_design` ✅
 2. `synth.lobster` for `csynth_design` ✅
 3. `cosim.lobster` for `cosim_design` ✅
-4. `export.lobster` for `export_design`
+4. `export.lobster` for `export_design` ✅
 
 That ordering is recommended because it preserves the same separation of concerns:
 
@@ -157,4 +157,4 @@ That ordering is recommended because it preserves the same separation of concern
 - synthesize after that
 - export last
 
-`sim.lobster` is now available as the first post-init workflow and follows the same pattern: batch Tcl execution, result-file handoff, structured state capture, and a final report-only AI review. `synth.lobster` now follows the same structure for `csynth_design`, including report extraction for timing/resource summaries. `cosim.lobster` extends the same pattern to `cosim_design`, including simulator log capture, cosim report parsing, and a final report-only AI review. See `docs/sim-workflow.md`, `docs/synth-workflow.md`, and `docs/cosim-workflow.md`.
+`sim.lobster` is now available as the first post-init workflow and follows the same pattern: batch Tcl execution, result-file handoff, structured state capture, and a final report-only AI review. `synth.lobster` now follows the same structure for `csynth_design`, including report extraction for timing/resource summaries. `cosim.lobster` extends the same pattern to `cosim_design`, including simulator log capture, cosim report parsing, and a final report-only AI review. `export.lobster` completes the chain with `export_design`, packaging-artifact capture, and a final report-only AI review. See `docs/sim-workflow.md`, `docs/synth-workflow.md`, `docs/cosim-workflow.md`, and `docs/export-workflow.md`.
