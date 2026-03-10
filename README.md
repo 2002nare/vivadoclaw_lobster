@@ -6,7 +6,7 @@
 
 AI-assisted Vivado FPGA workflows, built for **[vivadoclaw.ai](https://vivadoclaw.ai)**.
 
-> **Alpha** — Vivado init/simulation and Vitis HLS init workflows now work end-to-end. Synthesis/implementation/cosim/export workflows are the next layer.
+> **Alpha** — Vivado init/simulation and Vitis HLS init/simulation workflows now work end-to-end. HLS synthesis/cosim/export and downstream Vivado implementation flows are the next layer.
 
 ## Try it on vivadoclaw.ai
 
@@ -89,7 +89,7 @@ OpenClaw  --->  Lobster Workflow  --->  step 1: Tcl Script (Vivado action)
 |----------|--------|-------------|
 | `vitis-workflow/workflows/init-core.lobster` | **Done** | Stable HLS project initialization with result-file step handoff |
 | `vitis-workflow/workflows/init.lobster` | **Done** | HLS init plus AI review/auto-patch layer |
-| `vitis-workflow/workflows/sim.lobster` | Planned | C simulation (`csim_design`) |
+| `vitis-workflow/workflows/sim.lobster` | **Done** | C simulation (`csim_design`) with structured state capture and final AI review |
 | `vitis-workflow/workflows/synth.lobster` | Planned | HLS synthesis (`csynth_design`) |
 | `vitis-workflow/workflows/cosim.lobster` | Planned | C/RTL co-simulation (`cosim_design`) |
 | `vitis-workflow/workflows/export.lobster` | Planned | RTL/IP export (`export_design`) |
@@ -102,8 +102,9 @@ Recent validation work established a few practical rules:
 - the stable init path is `vitis-workflow/workflows/init-core.lobster`
 - result-file handoff between steps is more reliable than scraping JSON from stdout
 - the review path in `vitis-workflow/workflows/init.lobster` now also completes end-to-end for a validated `vector_add` example
+- `vitis-workflow/workflows/sim.lobster` now runs `csim_design`, captures structured simulation state, and finishes with a report-only AI review
 
-See `vitis-workflow/docs/init-workflow.md` for details.
+See `vitis-workflow/docs/init-workflow.md` and `vitis-workflow/docs/sim-workflow.md` for details.
 
 ## Structure
 
