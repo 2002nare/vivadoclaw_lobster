@@ -145,7 +145,7 @@ Validated final state included:
 
 After `init-core` stabilization, the next logical workflows are:
 
-1. `sim.lobster` for `csim_design`
+1. `sim.lobster` for `csim_design` ✅
 2. `synth.lobster` for `csynth_design`
 3. `cosim.lobster` for `cosim_design`
 4. `export.lobster` for `export_design`
@@ -156,3 +156,5 @@ That ordering is recommended because it preserves the same separation of concern
 - validate/simulate next
 - synthesize after that
 - export last
+
+`sim.lobster` is now available as the first post-init workflow and follows the same pattern: batch Tcl execution, result-file handoff, structured state capture, and a final report-only AI review. See `docs/sim-workflow.md`.
