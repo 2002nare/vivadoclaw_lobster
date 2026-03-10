@@ -91,7 +91,7 @@ OpenClaw  --->  Lobster Workflow  --->  step 1: Tcl Script (Vivado action)
 | `vitis-workflow/workflows/init.lobster` | **Done** | HLS init plus AI review/auto-patch layer |
 | `vitis-workflow/workflows/sim.lobster` | **Done** | C simulation (`csim_design`) with structured state capture and final AI review |
 | `vitis-workflow/workflows/synth.lobster` | **Done** | HLS synthesis (`csynth_design`) with report extraction and final AI review |
-| `vitis-workflow/workflows/cosim.lobster` | Planned | C/RTL co-simulation (`cosim_design`) |
+| `vitis-workflow/workflows/cosim.lobster` | **Done** | C/RTL co-simulation (`cosim_design`) with simulator/report capture and final AI review |
 | `vitis-workflow/workflows/export.lobster` | Planned | RTL/IP export (`export_design`) |
 
 ## Vitis HLS Notes
@@ -104,8 +104,9 @@ Recent validation work established a few practical rules:
 - the review path in `vitis-workflow/workflows/init.lobster` now also completes end-to-end for a validated `vector_add` example
 - `vitis-workflow/workflows/sim.lobster` now runs `csim_design`, captures structured simulation state, and finishes with a report-only AI review
 - `vitis-workflow/workflows/synth.lobster` now runs `csynth_design`, extracts timing/resource summaries, and finishes with a report-only AI review
+- `vitis-workflow/workflows/cosim.lobster` now runs `cosim_design`, captures simulator/report state, and finishes with a report-only AI review
 
-See `vitis-workflow/docs/init-workflow.md`, `vitis-workflow/docs/sim-workflow.md`, and `vitis-workflow/docs/synth-workflow.md` for details.
+See `vitis-workflow/docs/init-workflow.md`, `vitis-workflow/docs/sim-workflow.md`, `vitis-workflow/docs/synth-workflow.md`, and `vitis-workflow/docs/cosim-workflow.md` for details.
 
 ## Structure
 
