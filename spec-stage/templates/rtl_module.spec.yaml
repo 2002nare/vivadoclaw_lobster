@@ -42,8 +42,8 @@ intent:
 target:
   platform:                                 # ★ vendor, family, part required
     vendor: xilinx
-    family: ""
-    part: ""
+    family: ""                    # e.g. artix7
+    part: ""                      # e.g. xc7a35tcpg236-1 (Basys3)
     board: null
   tools:
     vivado: ""

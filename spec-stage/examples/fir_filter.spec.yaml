@@ -70,7 +70,7 @@ target:
   platform:
     vendor: xilinx
     family: artix7
-    part: xc7a35ticsg324-1L
+    part: xc7a35tcpg236-1
     board: basys3
   tools:
     vivado: "2024.1"
