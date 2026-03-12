@@ -1,0 +1,239 @@
+# ============================================================================
+# VivadoClaw Hardware Design Spec — rtl_module Template
+# ============================================================================
+# Fill in required fields (marked ★), then progressively complete the rest.
+# Required fields: project.{name, design_kind, summary}, intent.goal,
+#   target.platform.{vendor, family, part}, architecture.{top_module, language,
+#   interfaces[]}, functional_spec.behavior, verification.pass_criteria[],
+#   acceptance_criteria[]
+# ============================================================================
+
+spec_version: "0.1"
+status: draft
+
+maturity:
+  intent: draft
+  architecture: draft
+  functional_spec: draft
+  verification: draft
+  implementation: draft
+
+
+# ── Layer 1: Intent ──────────────────────────────────────────────────────────
+
+project:                                    # ★ all three required
+  name: ""                                  # machine-friendly, e.g. my_module_v1
+  design_kind: rtl_module
+  summary: ""                               # one-line, max 200 chars
+  description: ""
+  owner: ""
+  tags: []
+
+intent:
+  goal: ""                                  # ★ why does this design exist?
+  use_cases: []
+  non_goals: []
+  assumptions: []
+  out_of_scope: []
+
+
+# ── Layer 3: Build / Tool ────────────────────────────────────────────────────
+
+target:
+  platform:                                 # ★ vendor, family, part required
+    vendor: xilinx
+    family: ""
+    part: ""
+    board: null
+  tools:
+    vivado: ""
+    vitis: null
+    simulator: xsim
+  operating_mode: out_of_context
+  deliverables:
+    - rtl
+    - testbench
+
+
+# ── Layer 2: Architecture ────────────────────────────────────────────────────
+
+architecture:
+  top_module: ""                            # ★ module name
+  language: systemverilog                   # ★
+
+  clocking:
+    domains:
+      - name: clk
+        frequency_mhz: null
+        source: external
+
+  reset:
+    signals:
+      - name: rst_n
+        active_level: low
+        synchronous: true
+        affects: []
+
+  interfaces: []                            # ★ at least one interface required
+  #   - name: ""
+  #     kind: custom_stream
+  #     role: slave
+  #     signals:
+  #       - { name: "", dir: in, width: 8 }
+
+  parameters: []
+  submodules: []
+  data_path: {}
+  control_path: {}
+
+
+# ── Layer 2: Functional Spec ─────────────────────────────────────────────────
+
+functional_spec:
+  behavior: ""                              # ★ natural-language description
+  state_machines: []
+  transaction_rules: []
+  corner_cases: []
+  error_handling: []
+
+
+# ── Machine-Checkable Rules ──────────────────────────────────────────────────
+
+rules:
+  fixed_latency_cycles: null
+  allow_backpressure: false
+  max_clock_domains: 1
+  output_must_reset_to_zero: true
+  require_no_x_after_reset: true
+  allow_latches: false
+
+
+# ── Performance ──────────────────────────────────────────────────────────────
+
+performance:
+  freq_target_mhz: null
+  latency:
+    cycles: null
+    type: fixed
+  throughput:
+    inputs_per_cycle: null
+    outputs_per_cycle: null
+  utilization_budget:
+    lut_max: null
+    ff_max: null
+    dsp_max: null
+    bram_max: null
+  power_budget:
+    dynamic_mw: null
+    static_mw: null
+
+
+# ── Implementation Constraints ───────────────────────────────────────────────
+
+implementation_constraints:
+  synthesis:
+    infer_dsp: preferred
+    infer_bram: avoid
+    flatten_hierarchy: rebuilt
+  implementation:
+    strategy: default
+  coding_rules:
+    - "Use always_ff for sequential logic"
+    - "Use always_comb for combinational logic"
+    - "Do not infer latches"
+    - "Do not use #delay in synthesizable code"
+  ip_policy:
+    allow_vendor_ip: false
+    allow_generated_ip: false
+  cdc_policy:
+    allowed_clock_domains: 1
+    async_crossings_allowed: false
+  reset_policy:
+    default_reset_style: synchronous_active_low
+
+
+# ── Verification ─────────────────────────────────────────────────────────────
+
+verification:
+  strategy:
+    - directed_test
+  testbenches: []
+  test_vectors: []
+  assertions: []
+  coverage:
+    targets: []
+    line_target_pct: null
+    branch_target_pct: null
+  pass_criteria: []                         # ★ at least one criterion
+
+
+# ── Tool Flow ────────────────────────────────────────────────────────────────
+
+tool_flow:
+  sources:
+    rtl_dir: rtl/
+    tb_dir: tb/
+    xdc_dir: null
+  scripts:
+    sim: null
+    synth: null
+    impl: null
+  build_steps:
+    - simulate
+    - synthesize
+  reports: []
+  artifacts: []
+
+
+# ── Integration (usually empty for rtl_module) ──────────────────────────────
+
+integration:
+  register_map: []
+  memory_map: {}
+  interrupts: []
+  software_contract: {}
+  external_dependencies: []
+
+
+# ── Agent Guidance ───────────────────────────────────────────────────────────
+
+agent_guidance:
+  generation_hints: []
+  forbidden_patterns: []
+  review_checklist: []
+  repair_policy:
+    prioritize:
+      - functional_correctness
+      - timing_closure
+      - low_complexity
+    do_not_change: []
+  iteration_protocol:
+    max_repair_attempts: 3
+    escalation: ask_human
+    allow_spec_relaxation: false
+    relaxable_fields: []
+
+
+# ── Variant Spec ─────────────────────────────────────────────────────────────
+
+variant_spec:
+  rtl_module_spec:
+    synthesizable: true
+    single_clock_domain: true
+    combinational_only: false
+    preferred_templates: []
+    target_coding_style: implicit_pipeline
+
+
+# ── Traceability (agent-managed) ─────────────────────────────────────────────
+
+traceability:
+  requirements: []
+
+
+# ── Auxiliary ────────────────────────────────────────────────────────────────
+
+glossary: []
+unresolved_decisions: []
+open_questions: []
+acceptance_criteria: []                     # ★ at least one criterion

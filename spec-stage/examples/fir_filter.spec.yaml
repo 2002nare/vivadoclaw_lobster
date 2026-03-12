@@ -1,0 +1,562 @@
+# ============================================================================
+# VivadoClaw Hardware Design Spec — FIR Filter (rtl_module)
+# ============================================================================
+# Layer 1: Intent (project, intent)
+# Layer 2: Design Contract (architecture, functional_spec, rules, performance)
+# Layer 3: Build/Tool (target, tool_flow, implementation_constraints)
+# Cross-cutting: verification, agent_guidance, traceability
+# ============================================================================
+
+spec_version: "0.1"
+status: final
+
+maturity:
+  intent: complete
+  architecture: complete
+  functional_spec: complete
+  verification: complete
+  implementation: complete
+  integration: draft          # not applicable for standalone rtl_module
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 1 — Product / Intent
+# ──────────────────────────────────────────────────────────────────────────────
+
+project:
+  name: fir_filter_v1
+  design_kind: rtl_module
+  summary: "16-bit signed FIR filter with configurable taps and streaming valid interface"
+  description: >
+    A fully pipelined, fixed-latency FIR filter that accepts one signed sample
+    per clock cycle (when valid_in is asserted) and produces the filtered output
+    after TAP_COUNT pipeline stages. Coefficients are compile-time constants
+    stored in a parameter array. Designed for FPGA deployment on Basys3 board
+    targeting 100 MHz operation with DSP48 inference for multiply-accumulate.
+  owner: hardware-team
+  tags: [dsp, filter, rtl, pipeline, basys3]
+
+intent:
+  goal: >
+    Build a synthesizable, timing-clean FIR filter for FPGA deployment.
+    Prioritize timing stability and correctness over minimum resource usage.
+    The module must work standalone with a simple valid-in / valid-out
+    streaming interface — no backpressure, no AXI, no runtime reconfiguration.
+  use_cases:
+    - Preprocessing sensor data stream sampled at up to 1 MSPS
+    - First stage in a multi-rate DSP pipeline
+    - Educational reference for pipelined DSP on FPGA
+  non_goals:
+    - Runtime coefficient update (coefficients are compile-time)
+    - AXI bus integration (standalone streaming only)
+    - Multi-channel or multi-rate operation
+    - Floating-point arithmetic
+  assumptions:
+    - Single clock domain — all inputs synchronous to clk
+    - Input samples arrive pre-synchronized (no CDC needed)
+    - Coefficients are symmetric or asymmetric — module does not assume symmetry
+    - TAP_COUNT is always >= 2
+  out_of_scope:
+    - Physical ADC/DAC interface
+    - System-level buffering or FIFO
+    - Coefficient optimization or filter design (provided externally)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 3 — Build / Tool Environment
+# ──────────────────────────────────────────────────────────────────────────────
+
+target:
+  platform:
+    vendor: xilinx
+    family: artix7
+    part: xc7a35ticsg324-1L
+    board: basys3
+  tools:
+    vivado: "2024.1"
+    vitis: null
+    simulator: xsim
+  operating_mode: out_of_context
+  deliverables:
+    - rtl
+    - testbench
+    - synthesis_reports
+    - xdc
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 2 — Design Contract: Architecture
+# ──────────────────────────────────────────────────────────────────────────────
+
+architecture:
+  top_module: fir_filter
+  language: systemverilog
+
+  clocking:
+    domains:
+      - name: clk
+        frequency_mhz: 100
+        source: external
+
+  reset:
+    signals:
+      - name: rst_n
+        active_level: low
+        synchronous: true
+        affects:
+          - delay_line
+          - valid_pipeline
+          - accumulator_chain
+
+  interfaces:
+    - name: input_stream
+      kind: custom_stream
+      role: slave
+      signals:
+        - { name: sample_in,  dir: in,  width: 16, signed: true,  description: "Input sample" }
+        - { name: valid_in,   dir: in,  width: 1,  signed: false, description: "Input valid strobe" }
+      timing:
+        sampled_on: rising_edge
+
+    - name: output_stream
+      kind: custom_stream
+      role: master
+      signals:
+        - { name: sample_out, dir: out, width: 32, signed: true,  description: "Filtered output (full precision)", reset_value: 0 }
+        - { name: valid_out,  dir: out, width: 1,  signed: false, description: "Output valid strobe", reset_value: 0 }
+      timing:
+        sampled_on: rising_edge
+
+  parameters:
+    - name: DATA_WIDTH
+      type: int
+      default: 16
+      allowed_range: [8, 32]
+      description: "Bit width of input samples"
+    - name: TAP_COUNT
+      type: int
+      default: 5
+      allowed_range: [2, 64]
+      description: "Number of FIR filter taps (= number of coefficients)"
+    - name: COEFF_WIDTH
+      type: int
+      default: 16
+      allowed_range: [8, 32]
+      description: "Bit width of each coefficient"
+    - name: OUT_WIDTH
+      type: int
+      default: 32
+      allowed_range: [16, 64]
+      description: "Bit width of output (must accommodate full multiply-accumulate range)"
+
+  submodules:
+    - delay_line           # shift register for input sample history
+    - multiply_stage       # parallel coefficient × sample multipliers
+    - adder_tree           # pipelined adder tree for accumulation
+    - valid_pipeline       # valid signal delay matching
+
+  data_path:
+    arithmetic:
+      signed: true
+      saturation: false
+      rounding: truncation
+    pipeline_stages: 5     # matches TAP_COUNT default — actual is TAP_COUNT
+
+  control_path:
+    style: implicit_valid_pipeline
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 2 — Design Contract: Functional Specification
+# ──────────────────────────────────────────────────────────────────────────────
+
+functional_spec:
+  behavior: >
+    On each rising edge of clk, if valid_in == 1, the module captures sample_in
+    into a TAP_COUNT-deep shift register (delay line). Each stored sample is
+    multiplied by its corresponding coefficient. The products are summed through
+    a pipelined adder tree. The filtered result appears on sample_out exactly
+    TAP_COUNT clock cycles after the valid_in assertion, with valid_out asserted
+    for one cycle.
+
+    If valid_in == 0, no new sample enters the delay line, valid_out remains 0,
+    and the pipeline state is held (not flushed).
+
+    After reset deassertion, the delay line and valid pipeline are cleared to
+    zero. The first valid output appears TAP_COUNT cycles after the first
+    valid_in == 1.
+
+  state_machines: []        # no explicit FSM — pure datapath pipeline
+
+  transaction_rules:
+    - "sample_in is only sampled when valid_in == 1"
+    - "valid_out asserts exactly TAP_COUNT cycles after a corresponding valid_in"
+    - "If valid_in is deasserted for N cycles, valid_out is deasserted N cycles later (pipeline bubble)"
+    - "Outputs are fully deterministic after reset deassertion"
+    - "Back-to-back valid_in == 1 cycles produce back-to-back valid_out == 1 after pipeline fill"
+    - "Output width = DATA_WIDTH + COEFF_WIDTH + ceil(log2(TAP_COUNT)) to prevent overflow"
+
+  corner_cases:
+    - "Reset asserted during pipeline fill: all pipeline state and valid signals cleared to zero"
+    - "Reset asserted during active streaming: same — full pipeline flush"
+    - "Consecutive valid inputs (no gaps): must sustain 1 sample/cycle throughput"
+    - "Single valid pulse followed by idle: exactly one valid_out pulse after TAP_COUNT cycles"
+    - "All-zero coefficients: output must be zero for any input"
+    - "Maximum positive × maximum positive coefficient: no overflow or wrap in OUT_WIDTH"
+    - "Maximum negative × maximum negative coefficient: sign must be correct (positive result)"
+    - "Alternating +max / -max input: verify signed arithmetic chain integrity"
+
+  error_handling:
+    - "No explicit error output — module is pure datapath"
+    - "X/Z on sample_in when valid_in == 0 is harmless (not sampled)"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Machine-Checkable Constraints
+# ──────────────────────────────────────────────────────────────────────────────
+
+rules:
+  fixed_latency_cycles: 5             # default for TAP_COUNT=5; generalizes to TAP_COUNT
+  allow_backpressure: false
+  max_clock_domains: 1
+  output_must_reset_to_zero: true
+  require_no_x_after_reset: true
+  allow_latches: false
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Performance Targets
+# ──────────────────────────────────────────────────────────────────────────────
+
+performance:
+  freq_target_mhz: 100
+  latency:
+    cycles: 5               # TAP_COUNT (default)
+    type: fixed
+  throughput:
+    inputs_per_cycle: 1
+    outputs_per_cycle: 1
+  utilization_budget:
+    lut_max: 1000
+    ff_max: 1500
+    dsp_max: 5               # one DSP48 per tap (default TAP_COUNT=5)
+    bram_max: 0
+  power_budget:
+    dynamic_mw: null          # not constrained
+    static_mw: null
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Implementation Constraints — Coding Style Contract
+# ──────────────────────────────────────────────────────────────────────────────
+
+implementation_constraints:
+  synthesis:
+    infer_dsp: preferred
+    infer_bram: avoid
+    flatten_hierarchy: rebuilt
+  implementation:
+    strategy: default
+  coding_rules:
+    - "Use always_ff for all sequential logic"
+    - "Use always_comb for all combinational logic"
+    - "Do not infer latches under any circumstance"
+    - "Do not use #delay in synthesizable code"
+    - "Use localparam for derived constants"
+    - "Use generate for parameterized replication"
+    - "Explicit sign extension — do not rely on implicit widening"
+  ip_policy:
+    allow_vendor_ip: false
+    allow_generated_ip: false
+  cdc_policy:
+    allowed_clock_domains: 1
+    async_crossings_allowed: false
+  reset_policy:
+    default_reset_style: synchronous_active_low
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Verification
+# ──────────────────────────────────────────────────────────────────────────────
+
+verification:
+  strategy:
+    - directed_test
+    - reference_model_compare
+    - assertion_based
+
+  testbenches:
+    - name: fir_filter_tb
+      type: self_checking
+      description: >
+        Drives stimulus, computes expected output via a behavioral reference model
+        (simple convolution in the testbench), and compares cycle-by-cycle.
+
+  test_vectors:
+    - name: impulse
+      description: "Single 1 followed by zeros — output should be the coefficient sequence"
+      category: smoke
+    - name: step
+      description: "Constant nonzero input — output converges to sum(coefficients) × input"
+      category: functional
+    - name: constant_positive
+      description: "Repeated constant positive value"
+      category: functional
+    - name: constant_negative
+      description: "Repeated constant negative value"
+      category: functional
+    - name: alternating_sign
+      description: "+max, -max alternating — stress signed arithmetic chain"
+      category: corner_case
+    - name: max_positive
+      description: "All inputs = max positive (2^(DATA_WIDTH-1) - 1)"
+      category: corner_case
+    - name: max_negative
+      description: "All inputs = max negative (-2^(DATA_WIDTH-1))"
+      category: corner_case
+    - name: sparse_valid
+      description: "valid_in asserted every 10 cycles — verify pipeline bubble handling"
+      category: functional
+    - name: reset_mid_stream
+      description: "Assert reset while pipeline is active, verify clean recovery"
+      category: corner_case
+    - name: back_to_back_100
+      description: "100 consecutive valid inputs — throughput stress test"
+      category: stress
+
+  assertions:
+    - "valid_out == 1 implies sample_out corresponds to an input from exactly TAP_COUNT cycles earlier"
+    - "After reset deassertion, no X or Z on sample_out or valid_out"
+    - "valid_out must not assert during the first TAP_COUNT-1 cycles after first valid_in (pipeline fill)"
+    - "If valid_in == 0 for cycle N, then valid_out == 0 for cycle N + TAP_COUNT"
+    - "sample_out == 0 when all coefficients are zero"
+
+  coverage:
+    targets:
+      - reset_during_idle
+      - reset_during_active_stream
+      - back_to_back_valid_inputs
+      - single_valid_pulse
+      - gap_between_valid_pulses
+      - negative_input_values
+      - maximum_positive_values
+      - maximum_negative_values
+    line_target_pct: 100
+    branch_target_pct: 95
+
+  pass_criteria:
+    - "All self-checking tests pass with zero mismatches"
+    - "Simulation completes without $fatal or assertion failures"
+    - "No X/Z on any output after reset deassertion"
+    - "No synthesis errors"
+    - "No critical warnings related to width mismatch or latch inference"
+    - "Timing met at 100 MHz (no negative slack)"
+    - "DSP48 usage <= TAP_COUNT"
+    - "BRAM usage == 0"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 3 — Tool Flow (Build Manifest)
+# ──────────────────────────────────────────────────────────────────────────────
+
+tool_flow:
+  sources:
+    rtl_dir: rtl/
+    tb_dir: tb/
+    xdc_dir: constraints/
+  scripts:
+    sim: scripts/run_sim.tcl
+    synth: scripts/run_synth.tcl
+    impl: scripts/run_impl.tcl
+  build_steps:
+    - lint
+    - elaborate
+    - simulate
+    - synthesize
+  reports:
+    - reports/sim/sim.log
+    - reports/synth/utilization.rpt
+    - reports/synth/timing_summary.rpt
+  artifacts:
+    - rtl/fir_filter.sv
+    - tb/fir_filter_tb.sv
+    - constraints/fir_filter.xdc
+    - state/latest_status.json
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Integration (minimal for standalone rtl_module)
+# ──────────────────────────────────────────────────────────────────────────────
+
+integration:
+  register_map: []
+  memory_map: {}
+  interrupts: []
+  software_contract: {}
+  external_dependencies: []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Agent Guidance — Behavioral Constraints for RTL/Review/Repair Agents
+# ──────────────────────────────────────────────────────────────────────────────
+
+agent_guidance:
+  generation_hints:
+    - "Use a shift-register based delay line (not RAM-based for small TAP_COUNT)"
+    - "Instantiate one multiplier per tap — let synthesis infer DSP48"
+    - "Build adder tree with generate block for parameterized TAP_COUNT"
+    - "Pipeline the valid signal through a simple shift register matching data latency"
+    - "Use localparam for ACCUM_WIDTH = DATA_WIDTH + COEFF_WIDTH + $clog2(TAP_COUNT)"
+    - "Keep arithmetic readable — avoid aggressive manual optimization"
+    - "Use generate blocks only for the tap-parallel structures"
+
+  forbidden_patterns:
+    - "Do not use vendor IP (DSP48E1 instantiation) — use inference only"
+    - "Do not add handshake signals (ready/backpressure) not in the interface spec"
+    - "Do not change the fixed latency requirement"
+    - "Do not use blocking assignments in sequential blocks"
+    - "Do not introduce additional clock or reset signals"
+    - "Do not use `define for module-scoped constants — use localparam"
+    - "Do not add runtime coefficient update logic"
+
+  review_checklist:
+    - "Verify sign extension at every multiply and add stage"
+    - "Verify reset clears the entire valid pipeline"
+    - "Verify output latency matches TAP_COUNT exactly"
+    - "Verify no latch inference in synthesis log"
+    - "Verify DSP48 inference (check for DSP48E1 in utilization report)"
+    - "Verify no width mismatch warnings"
+    - "Verify ACCUM_WIDTH is sufficient for worst-case accumulation"
+
+  repair_policy:
+    prioritize:
+      - functional_correctness
+      - timing_closure
+      - low_complexity
+      - resource_efficiency
+    do_not_change:
+      - interface_names
+      - interface_signal_widths
+      - reset_polarity
+      - latency_cycles
+      - module_name
+
+  iteration_protocol:
+    max_repair_attempts: 3
+    escalation: ask_human
+    allow_spec_relaxation: false
+    relaxable_fields: []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Variant Spec — rtl_module specific
+# ──────────────────────────────────────────────────────────────────────────────
+
+variant_spec:
+  rtl_module_spec:
+    synthesizable: true
+    single_clock_domain: true
+    combinational_only: false
+    preferred_templates:
+      - pipeline
+      - shift_register
+    target_coding_style: implicit_pipeline
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Traceability — Agent-managed requirement → verification mapping
+# ──────────────────────────────────────────────────────────────────────────────
+
+traceability:
+  requirements:
+    - id: REQ-001
+      text: "Output latency shall be exactly TAP_COUNT clock cycles from valid input"
+      verified_by:
+        - TB-IMPULSE
+        - TB-SPARSE-VALID
+        - ASSERT-LATENCY
+      status: pending
+
+    - id: REQ-002
+      text: "Throughput shall sustain 1 sample per cycle with no backpressure"
+      verified_by:
+        - TB-BACK-TO-BACK-100
+      status: pending
+
+    - id: REQ-003
+      text: "All outputs must be zero-initialized after synchronous reset"
+      verified_by:
+        - TB-RESET-MID-STREAM
+        - ASSERT-NO-XZ
+      status: pending
+
+    - id: REQ-004
+      text: "Signed arithmetic must be correct across the full multiply-accumulate chain"
+      verified_by:
+        - TB-MAX-POSITIVE
+        - TB-MAX-NEGATIVE
+        - TB-ALTERNATING-SIGN
+      status: pending
+
+    - id: REQ-005
+      text: "No latch inference — all storage must be explicit flip-flops"
+      verified_by:
+        - SYNTH-WARNING-CHECK
+      status: pending
+
+    - id: REQ-006
+      text: "DSP48 inference for multiply operations"
+      verified_by:
+        - SYNTH-UTIL-CHECK
+      status: pending
+
+    - id: REQ-007
+      text: "Timing closure at 100 MHz with no negative slack"
+      verified_by:
+        - SYNTH-TIMING-CHECK
+      status: pending
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Glossary
+# ──────────────────────────────────────────────────────────────────────────────
+
+glossary:
+  - term: valid
+    meaning: "Input sample is captured when valid_in == 1 on the rising clock edge"
+  - term: tap
+    meaning: "One coefficient-multiply-accumulate stage in the FIR filter"
+  - term: delay_line
+    meaning: "Shift register storing the TAP_COUNT most recent input samples"
+  - term: pipeline_fill
+    meaning: "The initial TAP_COUNT cycles after first valid_in before valid_out can assert"
+  - term: adder_tree
+    meaning: "Hierarchical pipelined summation of all tap products"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Unresolved Decisions (none for final spec — included for template reference)
+# ──────────────────────────────────────────────────────────────────────────────
+
+unresolved_decisions: []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Open Questions
+# ──────────────────────────────────────────────────────────────────────────────
+
+open_questions: []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Acceptance Criteria — Top-Level Gate
+# ──────────────────────────────────────────────────────────────────────────────
+
+acceptance_criteria:
+  - "All 10 test vectors pass in self-checking simulation"
+  - "Zero assertion failures across all test runs"
+  - "Synthesis succeeds with no errors and no critical warnings"
+  - "Timing met at 100 MHz (WNS >= 0)"
+  - "Utilization within budget: LUT <= 1000, FF <= 1500, DSP <= 5, BRAM == 0"
+  - "Output matches behavioral reference model for every test vector"
+  - "Pipeline latency is exactly TAP_COUNT cycles (verified by impulse test)"
