@@ -1,0 +1,116 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HardwareSpecReview",
+  "description": "Structured review result for a hardware specification document",
+  "type": "object",
+  "required": ["executive_summary", "solid_points", "issues", "missing_requirements", "spec_fixes", "verdict"],
+  "properties": {
+    "executive_summary": {
+      "type": "array",
+      "description": "3 to 7 high-level bullet points summarizing the review",
+      "minItems": 3,
+      "maxItems": 7,
+      "items": { "type": "string" }
+    },
+    "solid_points": {
+      "type": "array",
+      "description": "Genuinely solid aspects of the spec — only list what is truly well-defined",
+      "items": { "type": "string" }
+    },
+    "issues": {
+      "type": "array",
+      "description": "All issues found during review",
+      "items": {
+        "type": "object",
+        "required": ["id", "severity", "topic", "problem", "why_it_matters", "recommended_fix"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Issue identifier, e.g. ISS-001"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "major", "minor"]
+          },
+          "topic": {
+            "type": "string",
+            "description": "Short topic label, e.g. clocking, reset, handshake, signal_ownership"
+          },
+          "problem": {
+            "type": "string",
+            "description": "Exact problematic statement or concept from the spec"
+          },
+          "why_it_matters": {
+            "type": "string",
+            "description": "Why this is a problem and the likely implementation failure mode"
+          },
+          "recommended_fix": {
+            "type": "string",
+            "description": "Concrete spec fix proposal"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "missing_requirements": {
+      "type": "array",
+      "description": "Requirements that are absent from the spec but should be defined",
+      "items": {
+        "type": "object",
+        "required": ["topic", "description"],
+        "properties": {
+          "topic": { "type": "string" },
+          "description": {
+            "type": "string",
+            "description": "What is missing and why it needs to be specified"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "spec_fixes": {
+      "type": "array",
+      "description": "Rewritten spec text for problematic parts only — use precise engineering wording",
+      "items": {
+        "type": "object",
+        "required": ["section", "original_text", "revised_text"],
+        "properties": {
+          "section": {
+            "type": "string",
+            "description": "Which spec section this fix applies to"
+          },
+          "original_text": {
+            "type": "string",
+            "description": "The original problematic text from the spec"
+          },
+          "revised_text": {
+            "type": "string",
+            "description": "The corrected spec text with precise engineering wording"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "verdict": {
+      "type": "object",
+      "required": ["status", "summary"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "acceptable_as_is",
+            "needs_minor_revision",
+            "needs_major_revision",
+            "not_implementable_safely"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "description": "1-2 sentence justification for the verdict"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
