@@ -1,0 +1,256 @@
+[
+  {
+    "executive_summary": [
+      "The spec establishes the intended split between synthesizable core and simulation-only BFM, but several requirements depend on undefined external timing parameters and undefined CDC mechanisms, which prevents safe implementation from the text alone.",
+      "Frame-start semantics are internally inconsistent: some text says a frame begins on cs_n assertion, while stricter text says it begins only at a qualified first sclk rising edge after legal timing checks.",
+      "The receive CDC path is specified in enough detail to imply intentional data loss under rate mismatch, but the exact coherency requirements for the transferred byte versus toggle event are not fully defined, creating a real risk of byte/event mismatch.",
+      "The transmit CDC path is underspecified and partially contradictory: the spec forbids direct sampling, requires a coherent capture event, but provides no interface, handshake, latency bound, or overwrite policy for preload updates.",
+      "Several timing-critical behaviors are left unspecified or delegated to integration constraints, especially T_CSS_MIN, cs_n/sclk setup-hold exclusion handling, and minimum cs_n high time between frames.",
+      "Verification guidance is incomplete for the highest-risk areas: CDC correctness, illegal start rejection boundaries, asynchronous cs_n behavior around sclk edges, and MISO output-enable glitch behavior are not covered rigorously enough.",
+      "As written, the spec is directionally useful but needs major revision before implementation because multiple compliant interpretations remain possible in core frame qualification, CDC, and external timing assumptions."
+    ],
+    "solid_points": [
+      "The spec clearly separates synthesizable core behavior from simulation-only BFM behavior and explicitly forbids simulation-only constructs inside the core RTL.",
+      "SPI mode, frame width, and bit ordering are consistently defined as Mode 0, fixed 8-bit, MSB-first across most sections.",
+      "The MISO tri-state ownership model is well defined: the core exposes miso_o and miso_oe only, with actual pad tri-state delegated to an external wrapper.",
+      "Abort behavior for cs_n deassertion before 8 qualified rising edges is consistently specified to suppress completion and rx_valid.",
+      "The spec explicitly states that extra sclk activity after normal 8-bit completion while cs_n remains low shall be ignored until cs_n returns high."
+    ],
+    "issues": [
+      {
+        "id": "ISS-001",
+        "severity": "critical",
+        "topic": "frame_start_definition",
+        "problem": "The spec uses conflicting frame-start definitions. Examples: \"A frame begins when cs_n is observed low after previously being high and the synthesizable layer enters frame-active state\" versus \"frame-start recognition shall occur only in the sclk domain\" and \"A legal frame start is recognized at a candidate first rising edge of sclk only if cs_n has been continuously low for at least T_CSS_MIN before that edge\".",
+        "why_it_matters": "These are different state models. One interpretation activates a frame on cs_n falling; another activates only on the first qualified sclk rising edge. Implementations will differ in when miso_oe asserts, when tx byte selection occurs, when bit_count starts, and how illegal starts are rejected. Verification can pass one interpretation and fail another.",
+        "recommended_fix": "Define a single normative event: either (A) frame_active asserts on cs_n falling after confirming sclk=0 and waits for first qualified rising edge, or (B) frame_active asserts only on the first qualified rising edge. Then align all behavioral, state-machine, and assertion text to that same event. Recommended: define a separate state `frame_pending` on legal cs_n fall and `frame_active` on first qualified rising edge."
+      },
+      {
+        "id": "ISS-002",
+        "severity": "critical",
+        "topic": "external_timing_parameter",
+        "problem": "T_CSS_MIN is required for legal frame qualification, but no numeric value, units, derivation rule, or ownership is defined. The spec repeatedly references \"T_CSS_MIN\" and \"tCSS(min)\" without actually specifying it.",
+        "why_it_matters": "Without a defined requirement, legal versus illegal frame start is unverifiable and unimplementable as a reusable core requirement. In hardware, the core cannot measure an analog package-pin interval unless tied to a specific clocking method. Different readers may treat this as a board timing constraint, a simulation parameter, or a digital counter-based check.",
+        "recommended_fix": "State explicitly that T_CSS_MIN is either (1) an external timing assumption not checked by the core and enforced only by integration/verification, or (2) a digital check implemented in the sclk domain using a specified timebase. For this core, recommended wording: the core does not measure T_CSS_MIN internally; legal operation requires external timing to satisfy `cs_n low setup to first sclk rising edge >= T_CSS_MIN`, where T_CSS_MIN is a board/interface requirement documented by the integrating system."
+      },
+      {
+        "id": "ISS-003",
+        "severity": "major",
+        "topic": "illegal_start_behavior",
+        "problem": "Illegal frame-start behavior is inconsistent. One part says illegal transfers are ignored until cs_n returns high; another verification assertion says \"If the cs_n-low-to-first-sclk-rise timing requirement is violated, first-bit transmit behavior is unspecified.\"",
+        "why_it_matters": "\"Ignored until cs_n returns high\" and \"first-bit transmit behavior is unspecified\" are not equivalent. One requires deterministic suppression of activity; the other permits arbitrary behavior on first-bit transmit. This can cause mismatched RTL/testbench behavior and mask real bugs.",
+        "recommended_fix": "Pick one rule. Recommended: for any illegal start, no frame is recognized, bit_count remains zero, rx_valid remains zero, no rx completion occurs, and miso_oe may remain deasserted or deassert immediately; all sclk edges are ignored until cs_n returns high. Remove any statement that first-bit behavior is unspecified for illegal starts."
+      },
+      {
+        "id": "ISS-004",
+        "severity": "critical",
+        "topic": "tx_cdc_mechanism",
+        "problem": "The transmit CDC requirement mandates a \"defined coherent CDC scheme\" and a \"synchronized capture event\" into tx_shadow_data/tx_shadow_valid, but no actual interface, handshake, acknowledgment, overwrite rule, or latency guarantee is defined.",
+        "why_it_matters": "This is the core correctness risk for MISO data selection. Without a defined CDC protocol, tx_shadow_data and tx_shadow_valid can become incoherent, stale, or overwritten near frame start. Implementers may choose incompatible schemes: double-sampled bus, toggle handshake, pulse-stretch valid, or asynchronous hold-and-sample. Some are unsafe for multi-bit coherence.",
+        "recommended_fix": "Specify the CDC protocol normatively. Example: clk domain presents `tx_data` and raises `tx_valid`; a `tx_update_tgl_clk` toggles only when tx_valid and tx_data are stable; sclk domain synchronizes the toggle, captures the byte and valid atomically into `tx_shadow_*`, and optionally returns `tx_update_ack_tgl_sclk`. Also define whether repeated updates may overwrite an unseen preload and whether `tx_shadow_valid` clears on tx_valid deassertion only after synchronized observation."
+      },
+      {
+        "id": "ISS-005",
+        "severity": "critical",
+        "topic": "rx_cdc_coherency",
+        "problem": "The receive CDC path says the clk domain shall synchronize `rx_event_tgl_sclk`, detect a toggle, and capture the corresponding stable receive byte into a single clk-domain holding register, but it does not define the coherency method for the multi-bit `rx_hold_sclk` crossing.",
+        "why_it_matters": "A toggle synchronizer only safely transfers the event, not the 8-bit data bus. If `rx_hold_sclk` is sampled directly in clk domain without a stability guarantee window tied to the event, the clk domain can capture a mixed or metastable byte. This is a classic CDC failure mode.",
+        "recommended_fix": "Define the coherency rule explicitly. Recommended: `rx_hold_sclk` shall be written only on frame completion and remain unchanged until the next completion event; clk domain shall sample `rx_hold_sclk` only after synchronized detection of `rx_event_tgl_sclk`, with the spec explicitly relying on the hold register remaining stable until the next event. If that assumption is not acceptable, require a proper handshake or asynchronous FIFO."
+      },
+      {
+        "id": "ISS-006",
+        "severity": "major",
+        "topic": "lossy_receive_semantics",
+        "problem": "The spec permits lossy receive behavior if a later completion occurs before a prior toggle is observed, but the loss model is ambiguous. It variously says the older pending completion may be lost and later says the later byte may overwrite the earlier byte and the earlier pending event may be lost.",
+        "why_it_matters": "There are at least two different failure models: lose older event but keep latest data, or lose newer event because toggle collapses, or byte/event mismatch. Verification expectations differ substantially. Integrators need to know whether the interface is latest-wins, first-wins, or undefined under overrun.",
+        "recommended_fix": "Define one explicit overrun policy. Recommended: latest-completion-wins. State that each new frame completion overwrites `rx_hold_sclk`; if multiple completions occur before clk observes a toggle, only the most recent completed byte is guaranteed to be reported, and exactly one rx_valid pulse may result for the most recent byte."
+      },
+      {
+        "id": "ISS-007",
+        "severity": "major",
+        "topic": "miso_oe_timing",
+        "problem": "The spec says \"miso_oe shall assert no later than frame start and remain asserted until frame completion or abort\" and also allows \"cs_n rising may deassert miso_oe immediately by combinational gating at the output boundary.\" It does not define whether assertion is combinational on cs_n, registered in sclk domain, or both.",
+        "why_it_matters": "Output-enable timing directly affects pad contention and first-bit visibility. Different implementations may assert OE on cs_n falling, on first qualified rising edge, or after a register edge. Deassertion may be asynchronous while assertion is synchronous, producing asymmetrical and potentially glitchy behavior.",
+        "recommended_fix": "Specify OE ownership precisely. Recommended: internal protocol state controls intended drive window, while external pad OE is `miso_oe_int && !cs_n`, allowing immediate deassertion on cs_n high. Also define when `miso_oe_int` asserts: either on legal cs_n fall or on successful frame-start qualification. State which is required for first-bit presentation."
+      },
+      {
+        "id": "ISS-008",
+        "severity": "major",
+        "topic": "minimum_cs_high_time",
+        "problem": "The spec requires cs_n to return high before a new frame, and mentions minimal idle spacing as a corner case, but does not define any minimum cs_n high pulse width or whether a zero-sclk high blip is sufficient to re-arm frame detection.",
+        "why_it_matters": "Without a minimum high-time requirement, a runt cs_n high pulse or asynchronous glitch may terminate and restart a frame unintentionally. Different implementations may re-arm immediately on any sampled high or require observation in a particular state.",
+        "recommended_fix": "Add a requirement for frame re-arming. Example: `cs_n` must be observed high continuously for at least one full sclk low phase before a subsequent low can qualify a new frame. If no digital filtering is intended, state that any high pulse meeting input timing to the relevant domain resets the frame detector, and shorter pulses are unspecified."
+      },
+      {
+        "id": "ISS-009",
+        "severity": "major",
+        "topic": "asynchronous_cs_n_handling",
+        "problem": "The spec treats cs_n as synchronous to the external SPI transfer yet also allows behavior to be unspecified if cs_n changes within the setup/hold exclusion window of an sclk edge. No implementation model is defined for how cs_n is used in the sclk domain despite being asynchronous to internal clk and not guaranteed glitch-free relative to sclk at silicon boundaries.",
+        "why_it_matters": "This leaves metastability and edge qualification responsibility unclear. An RTL implementation clocked on sclk and using cs_n in the sensitivity condition may still sample metastable cs_n around sclk edges. Verification may ignore this corner, but hardware can miscount bits or falsely abort.",
+        "recommended_fix": "State the assumed electrical timing model explicitly: cs_n must satisfy setup/hold to sclk at the input pins for all qualified edges; violating this is outside the guaranteed operating region. Also define that the RTL samples cs_n only at sclk edges for protocol state, except optional combinational OE gating at the pad wrapper."
+      },
+      {
+        "id": "ISS-010",
+        "severity": "major",
+        "topic": "sclk_quality_and_duty_cycle",
+        "problem": "The core relies on qualified rising and falling sclk edges, but no constraints are provided for minimum high/low pulse width, duty cycle, or maximum edge rate except that `max_supported_sclk_mhz` is null.",
+        "why_it_matters": "The architecture assumes both edges are usable sequential clock events. If sclk pulses are too narrow or distorted, either edge-triggered behavior or external IOB timing may fail. Without a maximum supported sclk and pulse-width assumptions, implementation and timing closure targets are undefined.",
+        "recommended_fix": "Specify `max_supported_sclk_mhz`, minimum high pulse width, minimum low pulse width, and any duty-cycle assumptions required for reliable operation on the target FPGA. If these are external assumptions rather than checked features, state them as integration requirements."
+      },
+      {
+        "id": "ISS-011",
+        "severity": "major",
+        "topic": "performance_spec_incomplete",
+        "problem": "`max_supported_sclk_mhz` is null while first-bit setup, edge qualification, and CDC all depend on relative clk and sclk behavior.",
+        "why_it_matters": "A synthesizable SPI slave specification without a supported sclk limit is incomplete for implementation signoff. Timing closure, verification stress cases, and external master compatibility cannot be derived.",
+        "recommended_fix": "Add a required minimum supported sclk frequency range or a target maximum supported sclk under stated implementation conditions. At minimum, state that support is guaranteed up to X MHz for the target device and tool flow, with clk at 100 MHz if relevant only to the byte-side domain."
+      },
+      {
+        "id": "ISS-012",
+        "severity": "minor",
+        "topic": "latency_wording",
+        "problem": "The performance section says latency is `1` cycle fixed in clk domain after completed frame transfer, while the functional text says rx_valid asserts on the next clk edge after toggle detection. These are not equivalent when the completion event arrives asynchronously to clk.",
+        "why_it_matters": "The observable latency from the 8th sclk rising edge to rx_valid is not fixed at one clk cycle; it is variable because synchronizer detection takes a data-dependent number of clk cycles. Overstating fixed latency can produce false expectations in integration and testbench scoreboards.",
+        "recommended_fix": "Change the performance wording to specify fixed latency relative to clk-domain event detection, not relative to physical frame completion. Example: `rx_valid` asserts exactly one clk cycle after synchronized detection of a completed-frame event; end-to-end latency from the 8th sclk edge is variable due to CDC."
+      },
+      {
+        "id": "ISS-013",
+        "severity": "major",
+        "topic": "reset_release_vs_external_inputs",
+        "problem": "Reset deassertion is synchronized independently into clk and sclk domains, but the spec does not define what happens if cs_n is already low or sclk is toggling when reset is released.",
+        "why_it_matters": "This can cause differing post-reset startup behavior. One implementation may wait for cs_n high before re-arming; another may treat the next sclk edge under low cs_n as a candidate start. In hardware, that affects whether a transaction spanning reset can be partially interpreted.",
+        "recommended_fix": "Add explicit post-reset re-entry conditions. Recommended: after reset release, the core shall remain idle and shall not recognize any frame until cs_n has first been observed high, then a subsequent legal low-to-active sequence occurs."
+      },
+      {
+        "id": "ISS-014",
+        "severity": "major",
+        "topic": "state_machine_vs_behavior_mix",
+        "problem": "The spec mixes architectural layering, implementation strategy, and cycle-accurate behavior in the same normative paragraphs, especially around frame qualification, CDC, and BFM extensions.",
+        "why_it_matters": "This obscures which statements are hard requirements versus explanatory intent. Implementers and reviewers may miss normative constraints hidden in architecture notes or verification assertions. It also increases the risk that BFM-specific behavior leaks into core requirements.",
+        "recommended_fix": "Split normative content into separate sections: external interface contract, synthesizable core behavior, CDC protocol requirements, and BFM-only requirements. Move explanatory architecture prose out of normative timing/behavior rules."
+      },
+      {
+        "id": "ISS-015",
+        "severity": "minor",
+        "topic": "bfm_scope_ambiguity",
+        "problem": "The spec says the BFM \"may instantiate spi_slave_core or model equivalent behavior\" and also says BFM-only additions shall not change nominal semantics. Equivalent modeling criteria are not defined.",
+        "why_it_matters": "A standalone behavioral BFM may accidentally diverge from the core on illegal starts, extra clocks, reset timing, or CDC effects, creating false confidence. The split between wrapper concerns and protocol-model concerns is not tightly controlled.",
+        "recommended_fix": "State that the verification reference for nominal protocol behavior is the synthesizable core contract, and if the BFM models equivalent behavior without instantiating the core, it must match the same legal/illegal frame, abort, and bit-order rules. Also separate pure simulation control tasks from protocol semantics."
+      },
+      {
+        "id": "ISS-016",
+        "severity": "major",
+        "topic": "verification_blind_spots",
+        "problem": "The verification plan lacks explicit tests and assertions for CDC coherency, tx preload overwrite races, post-reset requirement that cs_n must return high before new frame recognition, and OE glitchlessness around cs_n transitions.",
+        "why_it_matters": "These are the highest-risk implementation areas. Without targeted checks, a design can pass nominal SPI tests while still failing in hardware or under close timing conditions.",
+        "recommended_fix": "Add directed and assertion-based checks for: tx CDC atomicity; rx byte/event coherency; overrun semantics; illegal start rejection boundaries; cs_n low during reset release; and pad OE immediate deassert with no unintended reassertion during ignored extra clocks."
+      },
+      {
+        "id": "ISS-017",
+        "severity": "minor",
+        "topic": "target_dependency",
+        "problem": "The target names Artix-7/Basys3, but the spec is framed as reusable and out-of-context. No guidance states whether device-specific IOB usage, DDR primitives, or input delay assumptions are prohibited or allowed for sclk-domain logic.",
+        "why_it_matters": "Implementation choices for external sclk capture can differ dramatically by FPGA family. A reusable protocol spec should distinguish protocol requirements from target-specific realization constraints.",
+        "recommended_fix": "Clarify that the protocol spec is device-agnostic and that any target-specific I/O primitive usage belongs in implementation notes or a wrapper, not in the protocol contract. If vendor primitives are forbidden by policy, say so explicitly for the core and wrapper."
+      }
+    ],
+    "missing_requirements": [
+      {
+        "topic": "t_css_min_definition",
+        "description": "The spec depends on T_CSS_MIN/tCSS(min) to define legal frame start, but it never provides a numeric requirement, parameter, or statement that it is purely an external assumption. This must be explicit."
+      },
+      {
+        "topic": "tx_cdc_handshake",
+        "description": "The coherent clk-to-sclk preload transfer mechanism is not fully specified. The spec needs explicit signaling, stability requirements, overwrite behavior, and optionally acknowledgment semantics."
+      },
+      {
+        "topic": "rx_cdc_data_coherency_rule",
+        "description": "The receive byte transfer relies on a toggle event but does not normatively define how the clk domain safely captures the associated multi-bit data. A formal coherency/stability rule is required."
+      },
+      {
+        "topic": "post_reset_frame_rearming",
+        "description": "The spec must state whether the core requires observing cs_n high after reset release before any new frame can be recognized, especially if reset is released while cs_n is already low."
+      },
+      {
+        "topic": "minimum_cs_high_pulse",
+        "description": "A minimum or at least normative re-arm condition for cs_n high time between frames is absent, leaving new-frame qualification vulnerable to runt pulses or ambiguous behavior."
+      },
+      {
+        "topic": "supported_sclk_operating_limits",
+        "description": "Maximum supported sclk frequency, minimum pulse width, and any duty-cycle assumptions are missing, making implementation and verification targets incomplete."
+      },
+      {
+        "topic": "miso_oe_assertion_rule",
+        "description": "The exact rule for when miso_oe asserts relative to cs_n falling, frame qualification, and first-bit presentation is not stated unambiguously."
+      },
+      {
+        "topic": "overrun_policy",
+        "description": "The permitted lossy receive behavior needs a precise latest-wins/first-wins definition and event/data correspondence guarantee under back-to-back completions."
+      },
+      {
+        "topic": "illegal_start_output_behavior",
+        "description": "For illegal frame starts, the required behavior of miso_o and miso_oe is not fully explicit. Ignored-until-cs-high should include output behavior, not just internal counters/events."
+      },
+      {
+        "topic": "verification_requirements_for_cdc",
+        "description": "The verification section should explicitly require CDC-focused assertions/tests rather than only general directed protocol tests, because CDC is central to this architecture."
+      }
+    ],
+    "spec_fixes": [
+      {
+        "section": "functional_spec.behavior",
+        "original_text": "A frame begins when cs_n is observed low after previously being high and the synthesizable layer enters frame-active state.",
+        "revised_text": "A frame shall be considered recognized only on the first qualified rising edge of sclk after a legal frame-start precondition has been established. The legal frame-start precondition is: cs_n transitioned from high to low while sclk was low, cs_n remained low continuously until the first qualified rising edge, and all external timing assumptions for cs_n relative to sclk were satisfied. Before that qualified rising edge, the core may be in an internal pending-start state but shall not count bits or report frame completion."
+      },
+      {
+        "section": "architecture.clocking.notes",
+        "original_text": "A legal frame start is recognized at a candidate first rising edge of sclk only if cs_n has been continuously low for at least T_CSS_MIN before that edge and sclk was low immediately before the transition.",
+        "revised_text": "This specification does not require the core to measure T_CSS_MIN internally. Correct operation requires the external master and integration timing to guarantee that cs_n is low for at least T_CSS_MIN before the first rising edge of sclk of a frame and that sclk is low during cs_n assertion for Mode 0 start-of-frame behavior. If these conditions are not met, behavior is outside the guaranteed operating region and the transfer shall be treated as illegal for verification purposes."
+      },
+      {
+        "section": "verification.assertions",
+        "original_text": "If the cs_n-low-to-first-sclk-rise timing requirement is violated, first-bit transmit behavior is unspecified.",
+        "revised_text": "If the cs_n-low-to-first-sclk-rise timing requirement is violated, the attempted transfer shall be classified as an illegal frame start. For an illegal frame start, the core shall not generate frame completion, shall not generate rx_valid, shall not advance bit_count, and shall ignore subsequent sclk edges until cs_n returns high. The required miso_oe behavior for illegal starts shall be defined separately and verified consistently."
+      },
+      {
+        "section": "functional_spec.behavior",
+        "original_text": "The implementation shall use a defined coherent CDC scheme to create an sclk-domain transmit-byte shadow value and validity indication.",
+        "revised_text": "The implementation shall use an explicit coherent CDC protocol for clk-domain to sclk-domain transmit preload transfer. The protocol shall guarantee atomic capture of tx_data[7:0] and its associated validity state into tx_shadow_data[7:0] and tx_shadow_valid in the sclk domain. The specification shall define the CDC event signal, the source-side stability requirement, whether acknowledgments are used, and the overwrite policy if multiple updates occur before a frame-start selection event."
+      },
+      {
+        "section": "functional_spec.behavior",
+        "original_text": "On the 8th qualified rising edge of sclk, the sclk-domain protocol engine shall latch the completed receive byte into rx_hold_sclk and shall toggle rx_event_tgl_sclk exactly once for that frame. The clk domain shall synchronize rx_event_tgl_sclk through a two-flop synchronizer, detect a toggle change, capture the corresponding stable receive byte into the single clk-domain receive holding register, and assert rx_valid for exactly one clk cycle on the next clk edge after toggle detection.",
+        "revised_text": "On the 8th qualified rising edge of sclk, the sclk-domain protocol engine shall write the completed receive byte into rx_hold_sclk and shall toggle rx_event_tgl_sclk exactly once for that frame. rx_hold_sclk shall remain unchanged until the next completed frame writes a new byte. The clk domain shall synchronize rx_event_tgl_sclk through a two-flop synchronizer, detect a toggle change, and only then sample rx_hold_sclk into the clk-domain receive holding register. This specification permits loss of older completions under overrun; if multiple completions occur before clk observes a toggle change, only the most recently written rx_hold_sclk value is guaranteed to be reported."
+      },
+      {
+        "section": "architecture.reset.notes",
+        "original_text": "Reset deassertion shall be synchronized independently into clk and sclk, and after synchronized release each domain shall resume from the idle state only.",
+        "revised_text": "Reset deassertion shall be synchronized independently into clk and sclk. After synchronized release, the core shall remain in an idle, non-frame-active state and shall not recognize any frame until cs_n has first been observed high after reset release and a subsequent legal frame-start sequence occurs."
+      },
+      {
+        "section": "interfaces.tx_byte_if.description",
+        "original_text": "While tx_valid is 1, tx_data shall remain stable until tx_valid is deasserted or both tx_data and tx_valid are updated together to a new stable preload value.",
+        "revised_text": "The clk domain shall update tx_data only while tx_valid=0. After tx_data is stable, the clk domain may assert tx_valid to request a preload update. While tx_valid=1, tx_data shall remain unchanged until the preload update has been captured into the sclk-domain shadow register according to the defined CDC protocol or until tx_valid is deasserted before capture. The specification shall define whether deassertion before capture cancels the pending preload."
+      },
+      {
+        "section": "functional_spec.behavior",
+        "original_text": "miso_oe shall assert no later than frame start and remain asserted until frame completion or abort.",
+        "revised_text": "The specification shall define one normative MISO output-enable rule. Recommended rule: an internal drive-intent signal may assert when a legal frame-start precondition is established, and the externally visible pad-enable intent shall be `miso_oe = drive_intent && !cs_n`. Under this rule, deassertion on cs_n high is immediate, assertion requires a legal frame start, and ignored or illegal transfers shall not reassert drive_intent until cs_n returns high and a new legal frame starts."
+      },
+      {
+        "section": "performance.latency",
+        "original_text": "\"cycles\": 1, \"type\": \"fixed_clk_domain_report_latency_after_completed_frame_transfer\"",
+        "revised_text": "\"cycles\": 1, \"type\": \"fixed_clk_domain_report_latency_after_synchronized_completion_detection\""
+      },
+      {
+        "section": "functional_spec.corner_cases",
+        "original_text": "Back-to-back frames with minimal cs_n idle spacing.",
+        "revised_text": "Back-to-back frames with cs_n high between frames shall be tested against an explicit minimum re-arm requirement. The specification shall define whether any cs_n high pulse that satisfies input timing is sufficient or whether a minimum high duration is required before a new frame may begin."
+      }
+    ],
+    "verdict": {
+      "status": "needs_major_revision",
+      "summary": "The spec captures the intended SPI Mode-0 behavior and core/BFM separation, but it leaves critical implementation choices undefined or internally inconsistent around frame start, external timing assumptions, and CDC coherency. It should not be implemented as a signoff-quality hardware specification until those requirements are made explicit and verification is expanded around the identified risk areas."
+    }
+  }
+]
