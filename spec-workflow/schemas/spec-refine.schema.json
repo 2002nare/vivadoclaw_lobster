@@ -1,0 +1,73 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "HardwareSpecRefine",
+  "description": "Result of applying critical-only fixes to a hardware specification",
+  "type": "object",
+  "required": ["refined_spec", "changes", "summary"],
+  "properties": {
+    "refined_spec": {
+      "type": "string",
+      "description": "The full spec document text with critical fixes applied"
+    },
+    "changes": {
+      "type": "array",
+      "description": "One entry per critical issue addressed",
+      "items": {
+        "type": "object",
+        "required": ["issue_id", "status", "section", "original_text", "revised_text", "rationale"],
+        "properties": {
+          "issue_id": {
+            "type": "string",
+            "description": "The issue ID from the review, e.g. ISS-001"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["applied", "deferred"],
+            "description": "Whether the fix was applied or deferred"
+          },
+          "section": {
+            "type": "string",
+            "description": "Which spec section was modified"
+          },
+          "original_text": {
+            "type": "string",
+            "description": "The original text before the fix"
+          },
+          "revised_text": {
+            "type": "string",
+            "description": "The corrected text after the fix (empty if deferred)"
+          },
+          "rationale": {
+            "type": "string",
+            "description": "Why this change resolves the issue, or why it was deferred"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["total_critical_issues", "applied", "deferred", "description"],
+      "properties": {
+        "total_critical_issues": {
+          "type": "integer",
+          "description": "Total number of critical issues from the review"
+        },
+        "applied": {
+          "type": "integer",
+          "description": "Number of fixes successfully applied"
+        },
+        "deferred": {
+          "type": "integer",
+          "description": "Number of fixes deferred due to insufficient info"
+        },
+        "description": {
+          "type": "string",
+          "description": "Brief summary of what was changed and what was deferred"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

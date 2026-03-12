@@ -29,12 +29,13 @@ REQUEST_BODY=$(jq -n \
       input: $input,
       schema: $schema,
       maxTokens: 16000,
-      timeoutMs: 120000
+      timeoutMs: 300000
     }
   }')
 
 # Call OpenClaw API directly
 RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+  --max-time 310 \
   -X POST "${OPENCLAW_URL}/tools/invoke" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${OPENCLAW_TOKEN}" \
