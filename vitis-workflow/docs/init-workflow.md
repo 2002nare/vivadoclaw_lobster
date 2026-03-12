@@ -63,6 +63,26 @@ create_project → add_sources → add_testbench → create_solution → set_top
 
 ---
 
+## Prerequisites (for ALL workflows)
+
+### Environment Variables (REQUIRED — must be set before running)
+
+> **WARNING**: `OPENCLAW_URL` and `OPENCLAW_TOKEN` MUST be exported in the shell before running ANY workflow that uses `llm_review.sh`. The workflow WILL fail without them. Do NOT attempt to bypass, skip, or work around this requirement — there is no fallback. Set them explicitly every time.
+
+```bash
+export OPENCLAW_URL=http://127.0.0.1:18789    # OpenClaw gateway URL (REQUIRED)
+export OPENCLAW_TOKEN=<your-token>              # Bearer token (REQUIRED)
+```
+
+### Required Tools
+
+- `~/lobster/bin/lobster.js` — Lobster CLI
+- `vitis_hls` — Vitis HLS (must be in PATH)
+- `jq` — JSON processing
+- `curl` — HTTP requests
+
+---
+
 ## 2. Review Path: `init.lobster`
 
 ### Flow
