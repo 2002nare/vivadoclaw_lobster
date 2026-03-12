@@ -96,7 +96,7 @@ architecture:
     - name: spi_core_io
       kind: spi_slave_core
       role: slave
-      description: "Synthesizable core-facing SPI interface. Protocol-level MISO behavior is expressed through miso_o plus miso_oe rather than a direct tri-stated top-level pad."
+      description: "Synthesizable core-facing SPI interface. Protocol-level MISO behavior is expressed through miso_o plus miso_oe rather than a direct tri-stated top-level pad. Transfers are MSB-first: the first bit of each frame is bit 7 and the last bit is bit 0."
       signals:
         - { name: sclk, dir: in, width: 1 }
         - { name: cs_n, dir: in, width: 1 }
@@ -134,7 +134,7 @@ architecture:
 
   data_path:
     rx_path:
-      description: "Serial MOSI bits are sampled on qualified rising sclk edges during an active frame and accumulated into an 8-bit receive shift register."
+      description: "Serial MOSI bits are sampled on qualified rising sclk edges during an active frame and accumulated MSB-first into an 8-bit receive shift register, such that the first sampled bit becomes rx_data[7] and the eighth sampled bit becomes rx_data[0]."
       elements:
         - "Qualified MOSI sample point"
         - "8-bit RX shift register"
@@ -180,14 +180,18 @@ functional_spec:
     The design shall implement an SPI slave operating in Mode 0 with a fixed frame width of 8 bits.
     The slave shall participate in transfers only while cs_n is asserted low.
     A frame begins on a qualified cs_n high-to-low transition and ends either when the 8th qualified rising edge of sclk is accepted or when cs_n is deasserted early before that 8th qualified rising edge.
+    Transfers shall be MSB-first. For each frame, the first sampled MOSI bit shall map to rx_data[7], and the eighth sampled MOSI bit shall map to rx_data[0].
     During an active frame, the slave shall sample MOSI on each qualified rising edge of sclk and shall update MISO on each qualified falling edge of sclk.
     MISO shall remain stable around the master's sampling edge.
     The receive path shall assemble exactly 8 sampled MOSI bits into one receive byte.
     The transmit path shall shift one selected transmit byte across the same frame.
-    At frame start, the transmit byte shall come from tx_data when tx_valid is asserted; otherwise the transmit byte shall be DEFAULT_TX_BYTE.
+    tx_data and tx_valid shall belong to the clk-domain byte/control interface.
+    The transmit byte for a frame shall be selected exactly once at frame start. If tx_valid is asserted at that frame-start selection event, the frame's transmit byte shall be tx_data; otherwise the frame's transmit byte shall be DEFAULT_TX_BYTE.
+    Changes to tx_data or tx_valid after frame-start selection shall not affect the current in-flight frame.
     At frame start, the selected transmit byte shall be loaded such that MISO presents the first transmit bit before the first qualified rising edge of sclk in that frame.
-    After a full 8-bit frame completes normally, any additional sclk activity while cs_n remains low shall be ignored by the synthesizable layer and shall not generate additional receive bytes, rx_valid pulses, or continued MISO shifting.
-    When a full 8-bit frame completes normally, the synthesizable layer shall present rx_data and assert rx_valid for one clk cycle.
+    After a full 8-bit frame completes normally, any additional sclk activity while cs_n remains low shall be ignored by the synthesizable layer and shall not generate additional receive bytes, rx_valid pulses, continued MISO shifting, or a new frame start.
+    A new frame shall not begin until cs_n has first returned high and is then asserted low again.
+    When a full 8-bit frame completes normally, the synthesizable layer shall present rx_data and assert rx_valid for one clk cycle. rx_valid shall assert exactly one clk cycle after the completed frame is reported into the clk-domain byte/control interface by the required CDC logic.
     If cs_n deasserts before the 8th sampled bit, the frame is aborted and no receive-valid pulse shall be generated for that partial frame.
     When cs_n is inactive, the core shall express inactive MISO behavior through the defined output-enable policy rather than actively driving a valid data bit.
     The synthesizable SPI protocol engine shall operate in the sclk domain for shift, bit-count, and frame-boundary behavior, and any interaction with a separate clk-domain byte/control interface shall use explicit CDC logic.
@@ -204,19 +208,24 @@ functional_spec:
   transaction_rules:
     - "A frame begins on a qualified cs_n high-to-low transition."
     - "Exactly 8 qualified rising-edge MOSI sample events define one complete nominal frame."
-    - "The transmit byte for a frame shall be selected at frame start and shall remain the source for that frame's shifted MISO bits."
+    - "Transfers are MSB-first: the first sampled MOSI bit of a frame maps to rx_data[7], and the eighth sampled MOSI bit maps to rx_data[0]."
+    - "The transmit byte for a frame shall be selected exactly once at frame start and shall remain the source for that frame's shifted MISO bits."
+    - "If tx_valid is asserted at the frame-start selection event, the selected transmit byte shall be tx_data; otherwise it shall be DEFAULT_TX_BYTE."
+    - "Changes to tx_data or tx_valid after frame-start selection shall not affect the current in-flight frame."
     - "At frame start, the selected transmit byte shall be loaded so that the first transmit bit is present on MISO before the first qualified rising sclk edge of the frame."
     - "MISO updates shall occur only on qualified falling sclk edges while cs_n is low."
     - "MOSI samples shall occur only on qualified rising sclk edges while cs_n is low."
-    - "rx_valid shall pulse for exactly one clk cycle for each completed 8-bit frame."
+    - "After normal 8-bit frame completion, additional qualified sclk activity while cs_n remains low shall be ignored, and a new frame shall not begin until cs_n returns high and is then asserted low again."
+    - "rx_valid shall pulse for exactly one clk cycle for each completed 8-bit frame and shall assert exactly one clk cycle after the completed frame is reported into the clk-domain byte/control interface by the required CDC logic."
     - "A received byte may influence transmit data only for a subsequent frame, not retroactively for the current in-flight frame."
     - "The synthesizable interface shall not require backpressure to accept a completed received byte."
 
   corner_cases:
     - "cs_n deasserted in the middle of a frame before 8 sampled bits are collected."
     - "Extra sclk activity while cs_n remains low beyond the nominal 8-bit frame boundary; the synthesizable layer shall ignore such activity until cs_n returns high."
-    - "No tx_valid present at frame start, requiring DEFAULT_TX_BYTE fallback."
+    - "No tx_valid present at the frame-start selection event, requiring DEFAULT_TX_BYTE fallback."
     - "Back-to-back frames with minimal cs_n idle spacing."
+    - "tx_data or tx_valid changing after frame-start selection, which shall not affect the current in-flight frame."
     - "Reset asserted while a frame is in progress."
     - "Protocol anomaly injection in BFM mode for short frames, extra clocks, or forced mid-frame chip-select release."
 
@@ -242,11 +251,11 @@ rules:
 performance:
   freq_target_mhz: 100
   latency:
-    cycles: 8
-    type: fixed
+    cycles: 1
+    type: fixed_clk_domain_report_latency_after_completed_frame_transfer
   throughput:
-    inputs_per_cycle: 1
-    outputs_per_cycle: 1
+    frames_per_cs_assertion: 1
+    bytes_per_complete_frame: 1
   utilization_budget:
     lut_max: null
     ff_max: null
@@ -279,7 +288,7 @@ implementation_constraints:
   cdc_policy:
     allowed_clock_domains: 2
     async_crossings_allowed: true
-    note: "The synthesizable SPI protocol engine shall operate in the sclk domain. Crossings between the sclk-domain protocol engine and any separate clk-domain byte/control interface shall use explicit CDC logic."
+    note: "The synthesizable SPI protocol engine shall operate in the sclk domain. Crossings between the sclk-domain protocol engine and any separate clk-domain byte/control interface shall use explicit CDC logic. The frame-complete event transferred into the clk domain shall generate rx_valid exactly one clk cycle later."
   reset_policy:
     default_reset_style: synchronous_active_low
     reset_expectations:
@@ -330,11 +339,13 @@ verification:
       description: "Assert reset around idle and active-frame conditions and verify deterministic post-reset behavior."
   assertions:
     - "rx_valid shall assert for exactly one clk cycle on each complete 8-bit frame"
+    - "rx_valid shall assert exactly one clk cycle after the completed frame is reported into the clk-domain byte/control interface"
     - "rx_valid shall not assert for aborted partial frames"
     - "miso_o shall update only on qualified falling sclk edges during active frame operation"
     - "mosi shall be sampled only on qualified rising sclk edges during active frame operation"
+    - "Transfers shall be MSB-first, with the first sampled MOSI bit mapped to rx_data[7] and the eighth sampled MOSI bit mapped to rx_data[0]"
     - "The selected transmit byte shall be loaded at frame start such that the first transmit bit is present before the first qualified rising sclk edge of the frame"
-    - "Extra qualified sclk edges after normal 8-bit completion while cs_n remains low shall not generate additional receive completions or further MISO shifting"
+    - "Extra qualified sclk edges after normal 8-bit completion while cs_n remains low shall not generate additional receive completions, new frame starts, or further MISO shifting"
     - "miso_oe shall deassert when cs_n is inactive unless a simulation-only wrapper intentionally overrides pad behavior"
     - "The transmit byte used in a frame shall not change mid-frame after frame-start selection"
   coverage:
@@ -344,6 +355,9 @@ verification:
       - "default tx path"
       - "preloaded tx path"
       - "next-frame response path"
+      - "MSB-first bit ordering and rx_data bit mapping"
+      - "post-completion ignore-extra-clocks-until-cs-high behavior"
+      - "tx frame-start selection and post-selection immutability"
       - "reset during idle"
       - "reset during active frame"
       - "BFM error injection paths"
@@ -351,7 +365,7 @@ verification:
     branch_target_pct: null
   pass_criteria:
     - "All directed and self-checking tests complete with zero mismatches and zero fatal errors."
-    - "Complete 8-bit frames produce correct rx_data values and exactly one rx_valid pulse per completed frame."
+    - "Complete 8-bit frames produce correct MSB-first rx_data values and exactly one rx_valid pulse per completed frame."
     - "Mode-0 timing behavior is preserved: MOSI is sampled on qualified rising sclk edges and MISO is updated on qualified falling sclk edges while cs_n is low."
     - "At frame start, the first transmit bit is present before the first qualified rising sclk edge of the frame."
     - "Additional qualified sclk activity after normal 8-bit completion while cs_n remains low is ignored by the synthesizable layer."
@@ -435,7 +449,13 @@ traceability:
     - id: REQ-SPI-004
       text: "The slave shall update MISO on each falling edge of sclk while cs_n is low."
     - id: REQ-SPI-005
-      text: "The synthesizable layer shall generate rx_valid for exactly one clk cycle after each complete frame."
+      text: "The synthesizable layer shall generate rx_valid for exactly one clk cycle, exactly one clk cycle after a complete frame is reported into the clk-domain byte/control interface."
+    - id: REQ-SPI-007
+      text: "Transfers shall be MSB-first, with the first sampled MOSI bit mapped to rx_data[7] and the eighth sampled MOSI bit mapped to rx_data[0]."
+    - id: REQ-SPI-008
+      text: "The transmit byte for a frame shall be selected exactly once at frame start and shall not change during the in-flight frame."
+    - id: REQ-SPI-009
+      text: "After normal 8-bit frame completion, additional sclk activity while cs_n remains low shall be ignored until cs_n returns high."
     - id: REQ-SPI-006
       text: "The BFM-only layer may add tasks, queues, logging, error injection, and self-checking hooks without changing nominal common protocol behavior."
 
