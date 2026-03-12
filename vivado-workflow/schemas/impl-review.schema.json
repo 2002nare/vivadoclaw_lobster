@@ -1,0 +1,38 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "VivadoImplReview",
+  "type": "object",
+  "required": ["status", "issues", "patches", "summary"],
+  "properties": {
+    "status": {
+      "type": "string",
+      "enum": ["pass", "fail", "warning"]
+    },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["severity", "category", "message"],
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": ["error", "warning", "info"]
+          },
+          "category": {
+            "type": "string",
+            "enum": ["impl_error", "timing", "utilization", "bitstream", "config", "general"]
+          },
+          "message": { "type": "string" },
+          "related_file": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "patches": {
+      "type": "array",
+      "maxItems": 0
+    },
+    "summary": { "type": "string" }
+  },
+  "additionalProperties": false
+}
