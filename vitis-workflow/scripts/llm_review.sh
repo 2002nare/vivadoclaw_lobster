@@ -11,6 +11,14 @@ set -euo pipefail
 PROMPT_FILE="$1"
 SCHEMA_FILE="$2"
 
+export OPENCLAW_URL="${OPENCLAW_URL:-http://127.0.0.1:18789}"
+export OPENCLAW_TOKEN="${OPENCLAW_TOKEN:-$(cat ~/.openclaw/openclaw.json 2>/dev/null | grep -o '"token"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')}"
+
+if [ -z "${OPENCLAW_TOKEN:-}" ]; then
+  echo "llm_review.sh: OPENCLAW_TOKEN is not set and could not be read from ~/.openclaw/openclaw.json" >&2
+  exit 1
+fi
+
 # Read project state from stdin, prompt/schema from files
 PROJECT_STATE=$(cat)
 PROMPT=$(cat "$PROMPT_FILE")
