@@ -40,6 +40,7 @@ echo "llm_review.sh: raw_request saved to $REQUEST_LOG" >&2
 
 # Call OpenClaw API directly
 RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+  --max-time 310 \
   -X POST "${OPENCLAW_URL}/tools/invoke" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${OPENCLAW_TOKEN}" \
