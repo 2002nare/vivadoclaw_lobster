@@ -28,7 +28,8 @@ REQUEST_BODY=$(jq -n \
       prompt: $prompt,
       input: $input,
       schema: $schema,
-      maxTokens: 16000
+      maxTokens: 16000,
+      timeoutMs: 120000
     }
   }')
 
