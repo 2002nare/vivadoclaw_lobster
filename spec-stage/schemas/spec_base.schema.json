@@ -1,0 +1,877 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vivadoclaw.dev/schemas/spec_base.schema.json",
+  "title": "VivadoClaw Hardware Design Spec",
+  "description": "3-layer hardware design specification: Intent → Design Contract → Build/Tool",
+  "type": "object",
+  "required": [
+    "spec_version",
+    "status",
+    "project",
+    "intent",
+    "target",
+    "architecture",
+    "functional_spec",
+    "verification",
+    "acceptance_criteria"
+  ],
+  "properties": {
+
+    "spec_version": {
+      "type": "string",
+      "const": "0.1",
+      "description": "Schema version for forward compatibility"
+    },
+
+    "status": {
+      "type": "string",
+      "enum": ["draft", "partial", "review", "final"],
+      "description": "Overall document maturity"
+    },
+
+    "maturity": {
+      "type": "object",
+      "description": "Per-section completeness tracking",
+      "properties": {
+        "intent":          { "$ref": "#/$defs/completeness" },
+        "architecture":    { "$ref": "#/$defs/completeness" },
+        "functional_spec": { "$ref": "#/$defs/completeness" },
+        "verification":    { "$ref": "#/$defs/completeness" },
+        "implementation":  { "$ref": "#/$defs/completeness" },
+        "integration":     { "$ref": "#/$defs/completeness" }
+      },
+      "additionalProperties": { "$ref": "#/$defs/completeness" }
+    },
+
+    "project": {
+      "type": "object",
+      "required": ["name", "design_kind", "summary"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$",
+          "description": "Machine-friendly identifier"
+        },
+        "design_kind": {
+          "type": "string",
+          "enum": [
+            "rtl_module",
+            "rtl_system",
+            "axi_peripheral",
+            "streaming_pipeline",
+            "memory_mapped_accelerator",
+            "hls_kernel",
+            "block_design",
+            "soc_integration",
+            "board_io_design",
+            "verification_only"
+          ]
+        },
+        "summary": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "One-line description for agent's first branching decision"
+        },
+        "description": {
+          "type": "string",
+          "description": "Detailed natural-language description"
+        },
+        "owner": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "intent": {
+      "type": "object",
+      "required": ["goal"],
+      "description": "Layer 1: Product / Intent — why this design exists",
+      "properties": {
+        "goal": {
+          "type": "string",
+          "minLength": 10,
+          "description": "Primary objective in natural language"
+        },
+        "use_cases": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "non_goals": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Explicitly excluded scope — prevents agent overreach"
+        },
+        "assumptions": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "out_of_scope": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "target": {
+      "type": "object",
+      "required": ["platform"],
+      "description": "Layer 3: Build/Tool environment",
+      "properties": {
+        "platform": {
+          "type": "object",
+          "required": ["vendor", "family", "part"],
+          "properties": {
+            "vendor": { "type": "string", "enum": ["xilinx", "intel", "lattice", "microchip", "gowin", "efinix"] },
+            "family": { "type": "string" },
+            "part": { "type": "string" },
+            "board": { "type": ["string", "null"] }
+          }
+        },
+        "tools": {
+          "type": "object",
+          "properties": {
+            "vivado": { "type": ["string", "null"] },
+            "vitis": { "type": ["string", "null"] },
+            "simulator": {
+              "type": "string",
+              "enum": ["xsim", "verilator", "icarus", "modelsim", "questasim", "vcs", "riviera"]
+            }
+          }
+        },
+        "operating_mode": {
+          "type": "string",
+          "enum": ["out_of_context", "top_level", "ip_packaging", "board_demo", "soc_integration"]
+        },
+        "deliverables": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["rtl", "testbench", "constraints", "synthesis_reports", "bitstream", "xdc", "ip_package", "driver", "documentation"]
+          }
+        }
+      }
+    },
+
+    "architecture": {
+      "type": "object",
+      "required": ["top_module", "language", "interfaces"],
+      "description": "Layer 2: Design Contract — structural definition",
+      "properties": {
+        "top_module": {
+          "type": "string",
+          "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+        },
+        "language": {
+          "type": "string",
+          "enum": ["verilog", "systemverilog", "vhdl", "mixed"]
+        },
+        "clocking": {
+          "type": "object",
+          "properties": {
+            "domains": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/clock_domain" }
+            }
+          }
+        },
+        "reset": {
+          "type": "object",
+          "properties": {
+            "signals": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/reset_signal" }
+            }
+          }
+        },
+        "interfaces": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/interface" }
+        },
+        "parameters": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/parameter" }
+        },
+        "submodules": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "data_path": {
+          "type": "object",
+          "properties": {
+            "arithmetic": {
+              "type": "object",
+              "properties": {
+                "signed": { "type": "boolean" },
+                "saturation": { "type": "boolean" },
+                "rounding": { "type": "string", "enum": ["truncation", "round_half_up", "round_half_even", "convergent"] }
+              }
+            },
+            "pipeline_stages": { "type": ["integer", "null"], "minimum": 0 }
+          }
+        },
+        "control_path": {
+          "type": "object",
+          "properties": {
+            "style": {
+              "type": "string",
+              "enum": ["implicit_valid_pipeline", "fsm", "handshake", "credit_based", "none"]
+            }
+          }
+        }
+      }
+    },
+
+    "functional_spec": {
+      "type": "object",
+      "required": ["behavior"],
+      "description": "Layer 2: Behavioral contract — natural language + rules hybrid",
+      "properties": {
+        "behavior": {
+          "type": "string",
+          "minLength": 20,
+          "description": "Primary behavioral description in natural language"
+        },
+        "state_machines": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/state_machine" }
+        },
+        "transaction_rules": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Machine-translatable behavioral rules for assertion/test generation"
+        },
+        "corner_cases": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "error_handling": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "rules": {
+      "type": "object",
+      "description": "Machine-checkable constraints — directly usable for TB gen and auto-review",
+      "properties": {
+        "fixed_latency_cycles": { "type": ["integer", "null"], "minimum": 0 },
+        "allow_backpressure": { "type": "boolean" },
+        "max_clock_domains": { "type": "integer", "minimum": 1 },
+        "output_must_reset_to_zero": { "type": "boolean" },
+        "require_no_x_after_reset": { "type": "boolean" },
+        "max_fanout": { "type": ["integer", "null"] },
+        "allow_latches": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": {
+        "type": ["boolean", "integer", "string", "null"]
+      }
+    },
+
+    "performance": {
+      "type": "object",
+      "description": "Quantified targets — enables post-synthesis auto-comparison",
+      "properties": {
+        "freq_target_mhz": { "type": ["number", "null"] },
+        "latency": {
+          "type": "object",
+          "properties": {
+            "cycles": { "type": ["integer", "null"] },
+            "type": { "type": "string", "enum": ["fixed", "variable", "best_effort"] }
+          }
+        },
+        "throughput": {
+          "type": "object",
+          "properties": {
+            "inputs_per_cycle": { "type": ["number", "null"] },
+            "outputs_per_cycle": { "type": ["number", "null"] }
+          }
+        },
+        "utilization_budget": {
+          "type": "object",
+          "properties": {
+            "lut_max": { "type": ["integer", "null"] },
+            "ff_max": { "type": ["integer", "null"] },
+            "dsp_max": { "type": ["integer", "null"] },
+            "bram_max": { "type": ["integer", "null"] }
+          }
+        },
+        "power_budget": {
+          "type": "object",
+          "properties": {
+            "dynamic_mw": { "type": ["number", "null"] },
+            "static_mw": { "type": ["number", "null"] }
+          }
+        }
+      }
+    },
+
+    "implementation_constraints": {
+      "type": "object",
+      "description": "Coding style contract between Spec Agent and RTL Agent",
+      "properties": {
+        "synthesis": {
+          "type": "object",
+          "properties": {
+            "infer_dsp": { "type": "string", "enum": ["required", "preferred", "avoid", "forbidden"] },
+            "infer_bram": { "type": "string", "enum": ["required", "preferred", "avoid", "forbidden"] },
+            "flatten_hierarchy": { "type": "string", "enum": ["rebuilt", "full", "none"] }
+          }
+        },
+        "implementation": {
+          "type": "object",
+          "properties": {
+            "strategy": { "type": "string" }
+          }
+        },
+        "coding_rules": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "ip_policy": {
+          "type": "object",
+          "properties": {
+            "allow_vendor_ip": { "type": "boolean" },
+            "allow_generated_ip": { "type": "boolean" }
+          }
+        },
+        "cdc_policy": {
+          "type": "object",
+          "properties": {
+            "allowed_clock_domains": { "type": "integer", "minimum": 1 },
+            "async_crossings_allowed": { "type": "boolean" }
+          }
+        },
+        "reset_policy": {
+          "type": "object",
+          "properties": {
+            "default_reset_style": {
+              "type": "string",
+              "enum": ["synchronous_active_low", "synchronous_active_high", "asynchronous_active_low", "asynchronous_active_high"]
+            }
+          }
+        }
+      }
+    },
+
+    "verification": {
+      "type": "object",
+      "required": ["pass_criteria"],
+      "description": "Layer 2+3: What to verify and how to judge pass/fail",
+      "properties": {
+        "strategy": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["directed_test", "constrained_random", "reference_model_compare", "formal", "coverage_driven", "assertion_based"]
+          }
+        },
+        "testbenches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "type"],
+            "properties": {
+              "name": { "type": "string" },
+              "type": {
+                "type": "string",
+                "enum": ["self_checking", "visual_inspection", "reference_compare", "uvm"]
+              },
+              "description": { "type": "string" }
+            }
+          }
+        },
+        "test_vectors": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "description"],
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "category": { "type": "string", "enum": ["smoke", "functional", "corner_case", "stress", "regression"] }
+            }
+          }
+        },
+        "assertions": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Natural-language assertions — agent translates to SVA or TB checks"
+        },
+        "coverage": {
+          "type": "object",
+          "properties": {
+            "targets": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "line_target_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 100 },
+            "branch_target_pct": { "type": ["number", "null"], "minimum": 0, "maximum": 100 }
+          }
+        },
+        "pass_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string" },
+          "description": "At least one criterion required — this is how success is judged"
+        }
+      }
+    },
+
+    "tool_flow": {
+      "type": "object",
+      "description": "Layer 3: Build manifest — directly consumed by Tool Agent",
+      "properties": {
+        "sources": {
+          "type": "object",
+          "properties": {
+            "rtl_dir": { "type": "string" },
+            "tb_dir": { "type": "string" },
+            "xdc_dir": { "type": ["string", "null"] }
+          }
+        },
+        "scripts": {
+          "type": "object",
+          "properties": {
+            "sim": { "type": ["string", "null"] },
+            "synth": { "type": ["string", "null"] },
+            "impl": { "type": ["string", "null"] }
+          }
+        },
+        "build_steps": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["lint", "elaborate", "simulate", "synthesize", "implement", "generate_bitstream", "program"]
+          }
+        },
+        "reports": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "artifacts": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "integration": {
+      "type": "object",
+      "description": "Optional — required for axi_peripheral, soc_integration, etc.",
+      "properties": {
+        "register_map": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/register" }
+        },
+        "memory_map": {
+          "type": "object",
+          "properties": {
+            "base_address": { "type": ["string", "null"] },
+            "address_range": { "type": ["string", "null"] }
+          }
+        },
+        "interrupts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "trigger": { "type": "string", "enum": ["level_high", "level_low", "rising_edge", "falling_edge"] }
+            }
+          }
+        },
+        "software_contract": {
+          "type": "object",
+          "properties": {
+            "driver_model": { "type": "string" },
+            "endian": { "type": "string", "enum": ["little", "big"] }
+          }
+        },
+        "external_dependencies": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "agent_guidance": {
+      "type": "object",
+      "description": "Behavioral constraints and hints for the RTL/Review/Repair agents",
+      "properties": {
+        "generation_hints": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "forbidden_patterns": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "review_checklist": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "repair_policy": {
+          "type": "object",
+          "properties": {
+            "prioritize": {
+              "type": "array",
+              "items": { "type": "string" }
+            },
+            "do_not_change": {
+              "type": "array",
+              "items": { "type": "string" }
+            }
+          }
+        },
+        "iteration_protocol": {
+          "type": "object",
+          "description": "Controls agent's autonomous repair loop",
+          "properties": {
+            "max_repair_attempts": { "type": "integer", "minimum": 1, "default": 3 },
+            "escalation": {
+              "type": "string",
+              "enum": ["ask_human", "stop", "relax_constraints", "log_and_continue"]
+            },
+            "allow_spec_relaxation": { "type": "boolean", "default": false },
+            "relaxable_fields": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Fields agent may relax if allow_spec_relaxation is true"
+            }
+          }
+        }
+      }
+    },
+
+    "variant_spec": {
+      "type": "object",
+      "description": "Design-kind-specific fields — exactly one key matching project.design_kind",
+      "properties": {
+        "rtl_module_spec": { "$ref": "#/$defs/rtl_module_spec" },
+        "axi_peripheral_spec": { "$ref": "#/$defs/axi_peripheral_spec" },
+        "hls_kernel_spec": { "$ref": "#/$defs/hls_kernel_spec" }
+      },
+      "minProperties": 0,
+      "maxProperties": 1
+    },
+
+    "traceability": {
+      "type": "object",
+      "description": "Agent-managed requirement-to-verification mapping",
+      "properties": {
+        "requirements": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "text"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^REQ-[0-9]{3}$" },
+              "text": { "type": "string" },
+              "verified_by": {
+                "type": "array",
+                "items": { "type": "string" }
+              },
+              "status": {
+                "type": "string",
+                "enum": ["pending", "implemented", "verified", "waived"]
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "glossary": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["term", "meaning"],
+        "properties": {
+          "term": { "type": "string" },
+          "meaning": { "type": "string" }
+        }
+      }
+    },
+
+    "unresolved_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["topic", "options"],
+        "properties": {
+          "topic": { "type": "string" },
+          "options": { "type": "array", "items": { "type": "string" } },
+          "preferred": { "type": ["string", "null"] },
+          "decided": { "type": ["string", "null"] }
+        }
+      }
+    },
+
+    "open_questions": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+
+    "acceptance_criteria": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Top-level success definition — checked at final gate"
+    }
+  },
+
+
+  "$defs": {
+
+    "completeness": {
+      "type": "string",
+      "enum": ["draft", "partial", "complete"]
+    },
+
+    "clock_domain": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "frequency_mhz": { "type": ["number", "null"] },
+        "source": { "type": "string", "enum": ["external", "pll", "mmcm", "bufg"] },
+        "duty_cycle": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+      }
+    },
+
+    "reset_signal": {
+      "type": "object",
+      "required": ["name", "active_level"],
+      "properties": {
+        "name": { "type": "string" },
+        "active_level": { "type": "string", "enum": ["low", "high"] },
+        "synchronous": { "type": "boolean" },
+        "affects": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "interface": {
+      "type": "object",
+      "required": ["name", "kind", "role"],
+      "properties": {
+        "name": { "type": "string" },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "scalar", "custom_stream", "valid_ready", "axi_stream",
+            "axi_lite", "axi_mm", "bram_port", "ap_none", "ap_ctrl_hs",
+            "gpio", "interrupt", "wishbone"
+          ]
+        },
+        "role": { "type": "string", "enum": ["master", "slave", "bidirectional"] },
+        "signals": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/signal" }
+        },
+        "timing": {
+          "type": "object",
+          "properties": {
+            "sampled_on": { "type": "string", "enum": ["rising_edge", "falling_edge"] },
+            "setup_ns": { "type": ["number", "null"] },
+            "hold_ns": { "type": ["number", "null"] }
+          }
+        },
+        "protocol": {
+          "type": "object",
+          "description": "Protocol-specific parameters (e.g., burst, width for AXI)",
+          "additionalProperties": true
+        }
+      }
+    },
+
+    "signal": {
+      "type": "object",
+      "required": ["name", "dir", "width"],
+      "properties": {
+        "name": { "type": "string" },
+        "dir": { "type": "string", "enum": ["in", "out", "inout"] },
+        "width": { "type": "integer", "minimum": 1 },
+        "signed": { "type": "boolean", "default": false },
+        "description": { "type": "string" },
+        "reset_value": { "type": ["string", "integer", "null"] }
+      }
+    },
+
+    "parameter": {
+      "type": "object",
+      "required": ["name", "type", "default"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string", "enum": ["int", "real", "string", "bit_vector"] },
+        "default": {},
+        "allowed_range": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "[min, max] inclusive"
+        },
+        "allowed_values": {
+          "type": "array",
+          "description": "Enumerated allowed values"
+        },
+        "description": { "type": "string" }
+      }
+    },
+
+    "state_machine": {
+      "type": "object",
+      "required": ["name", "states"],
+      "properties": {
+        "name": { "type": "string" },
+        "states": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "initial_state": { "type": "string" },
+        "transitions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "from": { "type": "string" },
+              "to": { "type": "string" },
+              "condition": { "type": "string" },
+              "action": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "register": {
+      "type": "object",
+      "required": ["name", "offset", "width"],
+      "properties": {
+        "name": { "type": "string" },
+        "offset": { "type": "string", "pattern": "^0x[0-9a-fA-F]+$" },
+        "width": { "type": "integer" },
+        "fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "bits", "access"],
+            "properties": {
+              "name": { "type": "string" },
+              "bits": { "type": "string" },
+              "access": { "type": "string", "enum": ["rw", "ro", "wo", "rc", "w1c"] },
+              "reset_value": { "type": ["string", "integer", "null"] },
+              "description": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+
+    "rtl_module_spec": {
+      "type": "object",
+      "description": "Variant fields for design_kind: rtl_module",
+      "properties": {
+        "synthesizable": { "type": "boolean", "default": true },
+        "single_clock_domain": { "type": "boolean" },
+        "preferred_templates": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["pipeline", "shift_register", "fsm", "counter", "fifo", "arbiter", "crossbar", "datapath", "memory"]
+          }
+        },
+        "combinational_only": { "type": "boolean", "default": false },
+        "target_coding_style": {
+          "type": "string",
+          "enum": ["explicit_fsm", "implicit_pipeline", "generate_heavy", "minimal"]
+        }
+      }
+    },
+
+    "axi_peripheral_spec": {
+      "type": "object",
+      "description": "Variant fields for design_kind: axi_peripheral",
+      "properties": {
+        "bus_type": { "type": "string", "enum": ["axi_lite", "axi_full", "axi_stream"] },
+        "data_width": { "type": "integer", "enum": [32, 64, 128, 256] },
+        "address_width": { "type": "integer" },
+        "register_map_required": { "type": "boolean" },
+        "supports_interrupt": { "type": "boolean" },
+        "supports_burst": { "type": "boolean" },
+        "ip_packaging_required": { "type": "boolean" }
+      }
+    },
+
+    "hls_kernel_spec": {
+      "type": "object",
+      "description": "Variant fields for design_kind: hls_kernel",
+      "properties": {
+        "top_function": { "type": "string" },
+        "source_language": { "type": "string", "enum": ["cpp", "c"] },
+        "control_protocol": { "type": "string", "enum": ["ap_ctrl_hs", "ap_ctrl_chain", "ap_ctrl_none", "s_axilite"] },
+        "interface_pragmas": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "optimization_pragmas": {
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "c_sim_required": { "type": "boolean" },
+        "c_synth_required": { "type": "boolean" },
+        "cosim_required": { "type": "boolean" }
+      }
+    }
+  },
+
+
+  "allOf": [
+    {
+      "if": {
+        "properties": { "project": { "properties": { "design_kind": { "const": "rtl_module" } } } }
+      },
+      "then": {
+        "properties": {
+          "variant_spec": {
+            "required": ["rtl_module_spec"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "project": { "properties": { "design_kind": { "const": "axi_peripheral" } } } }
+      },
+      "then": {
+        "properties": {
+          "variant_spec": {
+            "required": ["axi_peripheral_spec"]
+          },
+          "integration": {
+            "required": ["register_map"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "project": { "properties": { "design_kind": { "const": "hls_kernel" } } } }
+      },
+      "then": {
+        "properties": {
+          "variant_spec": {
+            "required": ["hls_kernel_spec"]
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,775 @@
+# ============================================================================
+# VivadoClaw Hardware Design Spec — UART Transceiver
+# ============================================================================
+# Layer 1: Intent (project, intent)
+# Layer 2: Design Contract (architecture, functional_spec, rules, performance)
+# Layer 3: Build/Tool (target, tool_flow, implementation_constraints)
+# Cross-cutting: verification, agent_guidance, traceability
+# ============================================================================
+
+spec_version: "0.1"
+status: final
+
+maturity:
+  intent: complete
+  architecture: complete
+  functional_spec: complete
+  verification: complete
+  implementation: complete
+  integration: draft
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 1 — Product / Intent
+# ──────────────────────────────────────────────────────────────────────────────
+
+project:
+  name: uart_transceiver_v1
+  design_kind: rtl_module
+  summary: "Full-duplex UART transceiver with configurable baud rate, parity, and error detection"
+  description: >
+    A full-duplex UART (Universal Asynchronous Receiver/Transmitter) supporting
+    configurable baud rate, data width (7/8 bits), parity (none/even/odd), and
+    stop bits (1/2). Includes TX and RX state machines, a baud-rate generator
+    derived from the system clock, and error flags for parity error, framing
+    error, and receive overrun. Designed for Basys3 board deployment using the
+    on-board USB-UART bridge (directly accessible via JA or USB port).
+  owner: hardware-team
+  tags: [uart, serial, communication, fsm, basys3]
+
+intent:
+  goal: >
+    Build a synthesizable, board-deployable UART transceiver for Basys3.
+    The module must operate at standard baud rates up to 115200 with the
+    100 MHz system clock. Prioritize correctness and robust error detection
+    over area minimization. The design should be usable as a building block
+    for serial communication in larger systems.
+  use_cases:
+    - Debug console over USB-UART on Basys3
+    - Serial command/response interface with a host PC
+    - Loopback testing for board bring-up verification
+    - Building block for SoC integration
+  non_goals:
+    - Hardware flow control (RTS/CTS)
+    - FIFO buffering (external FIFO can be attached to the interface)
+    - DMA interface
+    - Auto baud-rate detection
+    - RS-232/RS-485 level shifting (external PHY responsibility)
+  assumptions:
+    - Single clock domain — 100 MHz system clock on Basys3
+    - External UART device uses the same protocol settings (baud, parity, stop)
+    - RX input (uart_rxd) is asynchronous and requires internal synchronization
+    - TX output (uart_txd) drives directly to the USB-UART bridge
+  out_of_scope:
+    - Multi-drop bus protocols (RS-485 direction control)
+    - Break signal generation/detection
+    - 9-bit addressing mode
+    - Internal TX/RX FIFOs (provide a ready/done handshake instead)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 3 — Build / Tool Environment
+# ──────────────────────────────────────────────────────────────────────────────
+
+target:
+  platform:
+    vendor: xilinx
+    family: artix7
+    part: xc7a35tcpg236-1
+    board: basys3
+  tools:
+    vivado: "2024.1"
+    vitis: null
+    simulator: xsim
+  operating_mode: board_demo
+  deliverables:
+    - rtl
+    - testbench
+    - constraints
+    - synthesis_reports
+    - bitstream
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 2 — Design Contract: Architecture
+# ──────────────────────────────────────────────────────────────────────────────
+
+architecture:
+  top_module: uart_transceiver
+  language: systemverilog
+
+  clocking:
+    domains:
+      - name: clk
+        frequency_mhz: 100
+        source: external
+
+  reset:
+    signals:
+      - name: rst_n
+        active_level: low
+        synchronous: true
+        affects:
+          - tx_fsm
+          - rx_fsm
+          - baud_counter
+          - rx_synchronizer
+          - error_flags
+
+  interfaces:
+    # --- Serial pins (directly to board / USB-UART bridge) ---
+    - name: serial
+      kind: scalar
+      role: bidirectional
+      signals:
+        - { name: uart_txd, dir: out, width: 1, description: "Serial transmit data line", reset_value: 1 }
+        - { name: uart_rxd, dir: in,  width: 1, description: "Serial receive data line (asynchronous)" }
+      timing:
+        sampled_on: rising_edge
+
+    # --- TX parallel interface (from user logic) ---
+    - name: tx_interface
+      kind: valid_ready
+      role: slave
+      signals:
+        - { name: tx_data,   dir: in,  width: 8, signed: false, description: "Parallel data to transmit" }
+        - { name: tx_start,  dir: in,  width: 1, signed: false, description: "Pulse high to begin transmission" }
+        - { name: tx_busy,   dir: out, width: 1, signed: false, description: "High while TX frame is in progress", reset_value: 0 }
+        - { name: tx_done,   dir: out, width: 1, signed: false, description: "Pulses high for one cycle when TX completes", reset_value: 0 }
+      timing:
+        sampled_on: rising_edge
+
+    # --- RX parallel interface (to user logic) ---
+    - name: rx_interface
+      kind: valid_ready
+      role: master
+      signals:
+        - { name: rx_data,   dir: out, width: 8, signed: false, description: "Received parallel data", reset_value: 0 }
+        - { name: rx_valid,  dir: out, width: 1, signed: false, description: "Pulses high for one cycle when a byte is received", reset_value: 0 }
+      timing:
+        sampled_on: rising_edge
+
+    # --- Error flags ---
+    - name: error_interface
+      kind: scalar
+      role: master
+      signals:
+        - { name: rx_parity_err,  dir: out, width: 1, signed: false, description: "Parity mismatch detected", reset_value: 0 }
+        - { name: rx_frame_err,   dir: out, width: 1, signed: false, description: "Stop bit not detected (framing error)", reset_value: 0 }
+        - { name: rx_overrun_err, dir: out, width: 1, signed: false, description: "New byte received before previous was read", reset_value: 0 }
+
+  parameters:
+    - name: CLK_FREQ_HZ
+      type: int
+      default: 100_000_000
+      allowed_range: [1_000_000, 300_000_000]
+      description: "System clock frequency in Hz"
+    - name: BAUD_RATE
+      type: int
+      default: 115200
+      allowed_values: [9600, 19200, 38400, 57600, 115200]
+      description: "Target baud rate"
+    - name: DATA_BITS
+      type: int
+      default: 8
+      allowed_values: [7, 8]
+      description: "Number of data bits per frame"
+    - name: PARITY
+      type: string
+      default: "NONE"
+      allowed_values: ["NONE", "EVEN", "ODD"]
+      description: "Parity mode"
+    - name: STOP_BITS
+      type: int
+      default: 1
+      allowed_values: [1, 2]
+      description: "Number of stop bits"
+
+  submodules:
+    - baud_rate_generator    # Divides system clock to produce baud tick
+    - uart_tx                # TX state machine + shift register
+    - uart_rx                # RX state machine + shift register + synchronizer
+    - rx_synchronizer        # 2-FF synchronizer for async uart_rxd input
+
+  data_path:
+    arithmetic:
+      signed: false
+      saturation: false
+      rounding: truncation
+    pipeline_stages: 0       # combinational paths within each FSM state
+
+  control_path:
+    style: fsm
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 2 — Design Contract: Functional Specification
+# ──────────────────────────────────────────────────────────────────────────────
+
+functional_spec:
+  behavior: >
+    The UART transceiver operates in full-duplex mode. TX and RX paths are
+    independent and run concurrently.
+
+    **Baud Rate Generator**: Derives a baud-rate tick from the system clock using
+    a counter that divides CLK_FREQ_HZ by BAUD_RATE. The RX path uses a 16x
+    oversampled tick for mid-bit sampling.
+
+    **TX Path**: When tx_start is pulsed high and tx_busy is low, the TX FSM
+    latches tx_data and begins serial transmission: start bit (0), DATA_BITS
+    data bits (LSB first), optional parity bit, and STOP_BITS stop bits (1).
+    uart_txd idles high. tx_busy is asserted for the entire frame duration.
+    tx_done pulses high for one clock cycle when the last stop bit completes.
+
+    **RX Path**: The RX FSM monitors uart_rxd (after 2-FF synchronization).
+    When a falling edge (start bit) is detected, the FSM waits to the mid-point
+    of the start bit to verify it is still low (noise rejection). It then samples
+    DATA_BITS data bits at their mid-points (LSB first), an optional parity bit,
+    and checks for the stop bit. On successful reception, rx_valid pulses high
+    for one clock cycle and rx_data holds the received byte.
+
+    **Error Detection**:
+    - rx_parity_err: asserts for one cycle with rx_valid if parity check fails
+    - rx_frame_err: asserts for one cycle with rx_valid if stop bit is not high
+    - rx_overrun_err: asserts for one cycle if a new start bit is detected while
+      rx_valid from the previous byte has not been acknowledged (i.e., back-to-back
+      frames arriving faster than the consumer reads)
+
+  state_machines:
+    - name: tx_fsm
+      states: [TX_IDLE, TX_START, TX_DATA, TX_PARITY, TX_STOP]
+      initial_state: TX_IDLE
+      transitions:
+        - { from: TX_IDLE,   to: TX_START,  condition: "tx_start == 1 && tx_busy == 0" }
+        - { from: TX_START,  to: TX_DATA,   condition: "baud_tick (start bit duration complete)" }
+        - { from: TX_DATA,   to: TX_PARITY, condition: "all DATA_BITS shifted out && PARITY != NONE" }
+        - { from: TX_DATA,   to: TX_STOP,   condition: "all DATA_BITS shifted out && PARITY == NONE" }
+        - { from: TX_PARITY, to: TX_STOP,   condition: "baud_tick (parity bit complete)" }
+        - { from: TX_STOP,   to: TX_IDLE,   condition: "stop bit(s) duration complete", action: "pulse tx_done" }
+
+    - name: rx_fsm
+      states: [RX_IDLE, RX_START, RX_DATA, RX_PARITY, RX_STOP]
+      initial_state: RX_IDLE
+      transitions:
+        - { from: RX_IDLE,   to: RX_START,  condition: "falling edge detected on synchronized uart_rxd" }
+        - { from: RX_START,  to: RX_DATA,   condition: "mid-bit sample confirms start bit == 0" }
+        - { from: RX_START,  to: RX_IDLE,   condition: "mid-bit sample sees 1 (noise rejection)" }
+        - { from: RX_DATA,   to: RX_PARITY, condition: "all DATA_BITS sampled && PARITY != NONE" }
+        - { from: RX_DATA,   to: RX_STOP,   condition: "all DATA_BITS sampled && PARITY == NONE" }
+        - { from: RX_PARITY, to: RX_STOP,   condition: "parity bit sampled" }
+        - { from: RX_STOP,   to: RX_IDLE,   condition: "stop bit sampled", action: "assert rx_valid, check errors" }
+
+  transaction_rules:
+    - "tx_data is latched only when tx_start == 1 and tx_busy == 0"
+    - "tx_start while tx_busy == 1 is ignored (no queueing)"
+    - "tx_done pulses for exactly one clk cycle"
+    - "rx_valid pulses for exactly one clk cycle per received frame"
+    - "rx_data is stable from rx_valid assertion until the next rx_valid"
+    - "Error flags (parity, frame, overrun) are synchronous with rx_valid"
+    - "uart_txd idles at logic high"
+    - "Data bits are transmitted and received LSB first"
+    - "Baud rate error must be < 2% for reliable communication"
+
+  corner_cases:
+    - "Reset during active TX frame: uart_txd returns to idle (high), tx_busy deasserts"
+    - "Reset during active RX frame: reception aborted, no rx_valid, errors cleared"
+    - "Noise on RX line during idle: false start bit rejected by mid-bit sampling"
+    - "Back-to-back TX frames: tx_start on same cycle as tx_done starts new frame immediately"
+    - "Back-to-back RX frames: new start bit immediately after stop bit must be captured"
+    - "RX overrun: new frame arrives while previous rx_valid not consumed"
+    - "Framing error: stop bit reads as 0 — flag error but still output received data"
+    - "Parity error with framing error: both flags can assert simultaneously"
+    - "All-zero data byte: must not be confused with break condition"
+    - "All-one data byte: must not be confused with idle line"
+    - "TX and RX operating simultaneously (full duplex stress)"
+    - "Baud rate mismatch < 2%: should still receive correctly"
+
+  error_handling:
+    - "rx_parity_err: asserted with rx_valid for one cycle, does not block reception"
+    - "rx_frame_err: asserted with rx_valid for one cycle, data still output"
+    - "rx_overrun_err: asserted for one cycle, previous data lost"
+    - "All error flags are non-sticky — cleared automatically after one cycle"
+    - "No TX-side errors defined"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Machine-Checkable Constraints
+# ──────────────────────────────────────────────────────────────────────────────
+
+rules:
+  fixed_latency_cycles: null          # latency is frame-duration dependent
+  allow_backpressure: false
+  max_clock_domains: 1
+  output_must_reset_to_zero: true
+  require_no_x_after_reset: true
+  allow_latches: false
+  tx_idle_level: 1                    # uart_txd must idle high
+  rx_synchronizer_stages: 2           # minimum 2-FF synchronizer
+  baud_rate_error_max_pct: 2.0        # max allowable baud rate deviation
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Performance Targets
+# ──────────────────────────────────────────────────────────────────────────────
+
+performance:
+  freq_target_mhz: 100
+  latency:
+    cycles: null              # frame-dependent: ~(1+DATA_BITS+parity+STOP_BITS) × (CLK_FREQ/BAUD)
+    type: variable
+  throughput:
+    inputs_per_cycle: null    # not cycle-based; max is BAUD_RATE / (frame_bits) bytes/sec
+    outputs_per_cycle: null
+  utilization_budget:
+    lut_max: 300
+    ff_max: 200
+    dsp_max: 0
+    bram_max: 0
+  power_budget:
+    dynamic_mw: null
+    static_mw: null
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Implementation Constraints — Coding Style Contract
+# ──────────────────────────────────────────────────────────────────────────────
+
+implementation_constraints:
+  synthesis:
+    infer_dsp: avoid
+    infer_bram: avoid
+    flatten_hierarchy: rebuilt
+  implementation:
+    strategy: default
+  coding_rules:
+    - "Use always_ff for all sequential logic"
+    - "Use always_comb for all combinational logic"
+    - "Do not infer latches under any circumstance"
+    - "Do not use #delay in synthesizable code"
+    - "Use localparam for derived constants (e.g., CLKS_PER_BIT)"
+    - "Use explicit enumerated types for FSM states"
+    - "RX synchronizer must be exactly 2 flip-flops in series"
+    - "Explicit case default in all FSMs to avoid latch inference"
+  ip_policy:
+    allow_vendor_ip: false
+    allow_generated_ip: false
+  cdc_policy:
+    allowed_clock_domains: 1
+    async_crossings_allowed: false   # uart_rxd handled by internal synchronizer
+  reset_policy:
+    default_reset_style: synchronous_active_low
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Verification
+# ──────────────────────────────────────────────────────────────────────────────
+
+verification:
+  strategy:
+    - directed_test
+    - assertion_based
+
+  testbenches:
+    - name: uart_transceiver_tb
+      type: self_checking
+      description: >
+        Self-checking testbench with a behavioral UART model. TX path:
+        send data via tx_interface, capture serial bitstream, decode and compare.
+        RX path: generate serial bitstream from reference model, verify rx_data
+        and rx_valid. Loopback: connect uart_txd → uart_rxd for end-to-end test.
+
+  test_vectors:
+    - name: tx_single_byte
+      description: "Transmit 0x55 (alternating bits), verify serial bitstream timing and encoding"
+      category: smoke
+
+    - name: rx_single_byte
+      description: "Inject 0xA3 on uart_rxd at correct baud, verify rx_data == 0xA3 and rx_valid"
+      category: smoke
+
+    - name: loopback_single
+      description: "Connect uart_txd → uart_rxd, send 0x42, verify rx_data == 0x42"
+      category: smoke
+
+    - name: loopback_sequential
+      description: "Loopback 256 bytes (0x00..0xFF), verify all received correctly in order"
+      category: functional
+
+    - name: tx_back_to_back
+      description: "Send 10 bytes with tx_start pulsed on each tx_done — no idle gap between frames"
+      category: functional
+
+    - name: rx_back_to_back
+      description: "Inject 10 consecutive frames with no inter-frame gap, verify all received"
+      category: functional
+
+    - name: parity_even_correct
+      description: "Send byte with correct even parity, verify no error flag"
+      category: functional
+
+    - name: parity_even_error
+      description: "Inject byte with wrong parity bit, verify rx_parity_err asserts"
+      category: corner_case
+
+    - name: parity_odd_correct
+      description: "Send byte with correct odd parity, verify no error flag"
+      category: functional
+
+    - name: framing_error
+      description: "Inject frame with stop bit == 0, verify rx_frame_err asserts and data still output"
+      category: corner_case
+
+    - name: overrun_error
+      description: "Inject two frames without reading first, verify rx_overrun_err on second"
+      category: corner_case
+
+    - name: noise_rejection
+      description: "Inject a brief glitch (< half bit period) on uart_rxd during idle, verify no false start"
+      category: corner_case
+
+    - name: reset_during_tx
+      description: "Assert reset mid-frame during TX, verify uart_txd returns to idle high"
+      category: corner_case
+
+    - name: reset_during_rx
+      description: "Assert reset mid-frame during RX, verify no rx_valid, errors cleared"
+      category: corner_case
+
+    - name: full_duplex_stress
+      description: "TX and RX operating simultaneously for 50 bytes each direction"
+      category: stress
+
+    - name: all_zeros
+      description: "Send 0x00, verify correct reception (not confused with break)"
+      category: corner_case
+
+    - name: all_ones
+      description: "Send 0xFF, verify correct reception (not confused with idle)"
+      category: corner_case
+
+    - name: baud_9600
+      description: "Override BAUD_RATE=9600, loopback 10 bytes, verify correctness"
+      category: regression
+
+    - name: data_bits_7
+      description: "Override DATA_BITS=7, send 0x55, verify 7-bit frame"
+      category: regression
+
+    - name: stop_bits_2
+      description: "Override STOP_BITS=2, loopback 5 bytes, verify timing"
+      category: regression
+
+  assertions:
+    - "uart_txd must be high during TX_IDLE state"
+    - "tx_busy must be asserted for entire frame duration (start to end of last stop bit)"
+    - "tx_done must pulse for exactly one clock cycle"
+    - "rx_valid must pulse for exactly one clock cycle per received frame"
+    - "rx_data must be stable from rx_valid until next rx_valid"
+    - "After reset deassertion, no X or Z on any output"
+    - "tx_busy and tx_done must never be high simultaneously"
+    - "Error flags must only assert simultaneously with rx_valid (except overrun)"
+    - "FSM must never enter an undefined state"
+    - "RX synchronizer output must be glitch-free (2-FF guarantee)"
+
+  coverage:
+    targets:
+      - tx_all_256_byte_values
+      - rx_all_256_byte_values
+      - parity_none_even_odd
+      - data_bits_7_and_8
+      - stop_bits_1_and_2
+      - tx_start_while_busy
+      - rx_noise_rejection
+      - rx_framing_error
+      - rx_parity_error
+      - rx_overrun_error
+      - reset_during_tx
+      - reset_during_rx
+      - back_to_back_tx_frames
+      - back_to_back_rx_frames
+      - simultaneous_tx_rx
+    line_target_pct: 100
+    branch_target_pct: 95
+
+  pass_criteria:
+    - "All self-checking tests pass with zero mismatches"
+    - "Loopback test: all 256 byte values round-trip correctly"
+    - "Simulation completes without $fatal or assertion failures"
+    - "No X/Z on any output after reset deassertion"
+    - "No synthesis errors"
+    - "No critical warnings related to latch inference or width mismatch"
+    - "Timing met at 100 MHz (no negative slack)"
+    - "DSP48 usage == 0"
+    - "BRAM usage == 0"
+    - "Error flags assert correctly for all injected error conditions"
+    - "Noise rejection: no false rx_valid from glitch shorter than half bit period"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Layer 3 — Tool Flow (Build Manifest)
+# ──────────────────────────────────────────────────────────────────────────────
+
+tool_flow:
+  sources:
+    rtl_dir: rtl/
+    tb_dir: tb/
+    xdc_dir: constraints/
+  scripts:
+    sim: scripts/run_sim.tcl
+    synth: scripts/run_synth.tcl
+    impl: scripts/run_impl.tcl
+  build_steps:
+    - lint
+    - elaborate
+    - simulate
+    - synthesize
+    - implement
+    - generate_bitstream
+  reports:
+    - reports/sim/sim.log
+    - reports/synth/utilization.rpt
+    - reports/synth/timing_summary.rpt
+    - reports/impl/timing_summary.rpt
+  artifacts:
+    - rtl/uart_transceiver.sv
+    - rtl/baud_rate_generator.sv
+    - rtl/uart_tx.sv
+    - rtl/uart_rx.sv
+    - tb/uart_transceiver_tb.sv
+    - constraints/uart_transceiver.xdc
+    - state/latest_status.json
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Integration (minimal for standalone rtl_module)
+# ──────────────────────────────────────────────────────────────────────────────
+
+integration:
+  register_map: []
+  memory_map: {}
+  interrupts: []
+  software_contract: {}
+  external_dependencies: []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Agent Guidance
+# ──────────────────────────────────────────────────────────────────────────────
+
+agent_guidance:
+  generation_hints:
+    - "Separate into submodules: baud_rate_generator, uart_tx, uart_rx, top wrapper"
+    - "Baud counter: localparam CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE"
+    - "RX mid-bit sampling: count to CLKS_PER_BIT/2 for start, then CLKS_PER_BIT for data"
+    - "Use 2-FF synchronizer for uart_rxd — declare with (* ASYNC_REG = \"TRUE\" *) attribute"
+    - "Use enumerated types (typedef enum) for FSM states for readability"
+    - "TX shift register: load parallel, shift right (LSB first)"
+    - "RX shift register: shift in from MSB side, result is LSB-first naturally"
+    - "Parity computation: XOR reduction of data bits"
+    - "Keep baud generator as a shared tick or instantiate separately for TX and RX"
+    - "XDC: uart_txd → RsTx (pin A18), uart_rxd → RsRx (pin B18) on Basys3 USB-RS232"
+    - "XDC: clk → W5 (100 MHz, period 10ns), rst_n → mapped from active-high btnC (U18) with inversion"
+    - "XDC: all pins LVCMOS33, include CONFIG_VOLTAGE 3.3 and CFGBVS VCCO"
+
+  forbidden_patterns:
+    - "Do not use vendor IP or primitives"
+    - "Do not add FIFO buffering inside the UART module"
+    - "Do not add hardware flow control (RTS/CTS)"
+    - "Do not use blocking assignments in sequential blocks"
+    - "Do not infer latches — all FSM case statements must have a default"
+    - "Do not use `define for module-scoped constants"
+    - "Do not add clock enables or clock gating"
+    - "Do not change the 2-FF synchronizer to 1 or 3 stages"
+
+  review_checklist:
+    - "Verify 2-FF synchronizer on uart_rxd with ASYNC_REG attribute"
+    - "Verify baud rate calculation: CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE, error < 2%"
+    - "Verify TX idles high, start bit is low"
+    - "Verify data bits shift LSB first in both TX and RX"
+    - "Verify parity calculation matches PARITY parameter"
+    - "Verify stop bit check in RX FSM"
+    - "Verify all three error flags assert at correct times"
+    - "Verify reset clears both FSMs to IDLE and all outputs to default"
+    - "Verify no latch inference warnings in synthesis"
+    - "Verify XDC pin mappings match Basys3 schematic"
+    - "Verify tx_done and rx_valid are exactly one cycle wide"
+
+  repair_policy:
+    prioritize:
+      - functional_correctness
+      - timing_closure
+      - error_detection_accuracy
+      - low_complexity
+    do_not_change:
+      - interface_names
+      - interface_signal_widths
+      - reset_polarity
+      - module_name
+      - synchronizer_stage_count
+      - fsm_state_names
+
+  iteration_protocol:
+    max_repair_attempts: 3
+    escalation: ask_human
+    allow_spec_relaxation: false
+    relaxable_fields: []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Variant Spec — rtl_module specific
+# ──────────────────────────────────────────────────────────────────────────────
+
+variant_spec:
+  rtl_module_spec:
+    synthesizable: true
+    single_clock_domain: true
+    combinational_only: false
+    preferred_templates:
+      - fsm
+      - shift_register
+      - counter
+    target_coding_style: explicit_fsm
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Traceability — Agent-managed requirement → verification mapping
+# ──────────────────────────────────────────────────────────────────────────────
+
+traceability:
+  requirements:
+    - id: REQ-001
+      text: "Full-duplex TX and RX operating independently and simultaneously"
+      verified_by:
+        - TB-FULL-DUPLEX-STRESS
+      status: pending
+
+    - id: REQ-002
+      text: "Correct serial encoding: start(0) + data(LSB first) + parity(optional) + stop(1)"
+      verified_by:
+        - TB-TX-SINGLE-BYTE
+        - TB-LOOPBACK-SEQUENTIAL
+        - ASSERT-TX-IDLE-HIGH
+      status: pending
+
+    - id: REQ-003
+      text: "RX must synchronize asynchronous uart_rxd with 2-FF synchronizer"
+      verified_by:
+        - REVIEW-SYNCHRONIZER
+        - ASSERT-ASYNC-REG
+      status: pending
+
+    - id: REQ-004
+      text: "RX mid-bit sampling with noise rejection on start bit"
+      verified_by:
+        - TB-NOISE-REJECTION
+        - TB-RX-SINGLE-BYTE
+      status: pending
+
+    - id: REQ-005
+      text: "Parity error detection (even and odd modes)"
+      verified_by:
+        - TB-PARITY-EVEN-CORRECT
+        - TB-PARITY-EVEN-ERROR
+        - TB-PARITY-ODD-CORRECT
+      status: pending
+
+    - id: REQ-006
+      text: "Framing error detection when stop bit is not high"
+      verified_by:
+        - TB-FRAMING-ERROR
+      status: pending
+
+    - id: REQ-007
+      text: "Overrun error when new frame arrives before previous consumed"
+      verified_by:
+        - TB-OVERRUN-ERROR
+      status: pending
+
+    - id: REQ-008
+      text: "Configurable parameters: BAUD_RATE, DATA_BITS, PARITY, STOP_BITS"
+      verified_by:
+        - TB-BAUD-9600
+        - TB-DATA-BITS-7
+        - TB-STOP-BITS-2
+      status: pending
+
+    - id: REQ-009
+      text: "Back-to-back frames with no idle gap between them"
+      verified_by:
+        - TB-TX-BACK-TO-BACK
+        - TB-RX-BACK-TO-BACK
+      status: pending
+
+    - id: REQ-010
+      text: "Clean reset recovery — all outputs to default, FSMs to IDLE"
+      verified_by:
+        - TB-RESET-DURING-TX
+        - TB-RESET-DURING-RX
+        - ASSERT-NO-XZ
+      status: pending
+
+    - id: REQ-011
+      text: "Timing closure at 100 MHz on Basys3"
+      verified_by:
+        - SYNTH-TIMING-CHECK
+      status: pending
+
+    - id: REQ-012
+      text: "Zero DSP and BRAM usage"
+      verified_by:
+        - SYNTH-UTIL-CHECK
+      status: pending
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Glossary
+# ──────────────────────────────────────────────────────────────────────────────
+
+glossary:
+  - term: baud
+    meaning: "Symbol rate — one bit per baud period in UART"
+  - term: start_bit
+    meaning: "Logic 0 for one baud period, signals beginning of a frame"
+  - term: stop_bit
+    meaning: "Logic 1 for one or two baud periods, signals end of a frame"
+  - term: framing_error
+    meaning: "Stop bit position reads 0 instead of expected 1"
+  - term: overrun
+    meaning: "New data received before consumer read previous data"
+  - term: mid_bit_sampling
+    meaning: "Sampling the serial line at the center of a bit period for noise immunity"
+  - term: CLKS_PER_BIT
+    meaning: "Number of system clock cycles per one baud period = CLK_FREQ_HZ / BAUD_RATE"
+  - term: 2FF_synchronizer
+    meaning: "Two cascaded flip-flops to safely cross from async domain to sync domain"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Unresolved Decisions
+# ──────────────────────────────────────────────────────────────────────────────
+
+unresolved_decisions: []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Open Questions
+# ──────────────────────────────────────────────────────────────────────────────
+
+open_questions: []
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Acceptance Criteria — Top-Level Gate
+# ──────────────────────────────────────────────────────────────────────────────
+
+acceptance_criteria:
+  - "All 20 test vectors pass in self-checking simulation"
+  - "256-byte loopback round-trip with zero mismatches"
+  - "All error injection tests trigger correct error flags"
+  - "Noise rejection: no false rx_valid for glitches < half bit period"
+  - "Zero assertion failures across all test runs"
+  - "Synthesis succeeds with no errors and no critical warnings"
+  - "Timing met at 100 MHz (WNS >= 0)"
+  - "Utilization: LUT <= 300, FF <= 200, DSP == 0, BRAM == 0"
+  - "Bitstream generation succeeds for Basys3"
+  - "Full-duplex operation verified under simultaneous TX/RX stress"
