@@ -190,7 +190,9 @@ vivado-workflow/
 │   ├── init-review.md            # 1차 리뷰 프롬프트
 │   └── init-review-cycle2.md     # 2차 리뷰 프롬프트
 └── docs/
-    └── init-workflow.md          # 이 문서
+    ├── init-workflow.md          # 이 문서
+    ├── sim-workflow.md           # 시뮬레이션 워크플로우 문서
+    └── impl-split-workflow.md    # 구현/bitstream 분리 워크플로우 문서
 ```
 
 ## 컨테이너 환경 참고

@@ -133,7 +133,9 @@ vivado-workflow/
 ├── prompts/
 │   └── sim-review.md              # 리뷰 프롬프트
 └── docs/
-    └── sim-workflow.md            # 이 문서
+    ├── init-workflow.md           # 프로젝트 초기화 워크플로우 문서
+    ├── sim-workflow.md            # 이 문서
+    └── impl-split-workflow.md     # 구현/bitstream 분리 워크플로우 문서
 ```
 
 ## 테스트벤치 작성 팁
