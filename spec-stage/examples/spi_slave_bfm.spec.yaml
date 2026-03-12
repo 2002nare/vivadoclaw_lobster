@@ -1,0 +1,461 @@
+spec_version: "0.1"
+status: draft
+
+maturity:
+  intent: draft
+  architecture: draft
+  functional_spec: draft
+  verification: draft
+  implementation: draft
+
+project:
+  name: spi_slave_bfm
+  design_kind: rtl_module
+  summary: "Mode-0, fixed-8-bit SPI slave spec with layered synthesizable core and BFM-only verification features."
+  description: "Defines a reusable SPI slave specification that separates common SPI protocol behavior, synthesizable slave requirements, and simulation-only BFM extensions."
+  owner: ""
+  tags:
+    - spi
+    - slave
+    - bfm
+    - systemverilog
+    - mode0
+    - fixed8
+
+intent:
+  goal: "Define a reusable SPI Mode-0 slave specification that can serve both as a synthesizable byte-oriented slave core and as a simulation-oriented BFM for verifying SPI master behavior, while preserving a common protocol definition across both layers. The synthesizable SPI protocol engine uses sclk as its protocol clock domain, with explicit CDC to any separate clk-domain byte/control interface."
+  use_cases:
+    - "Verify an SPI master DUT against a byte-oriented slave endpoint in simulation."
+    - "Provide a synthesizable baseline SPI slave for FPGA integration."
+    - "Support preloaded-response and next-frame-response transaction patterns."
+    - "Enable negative testing through BFM-only protocol error injection."
+  non_goals:
+    - "Define a full register-mapped peripheral protocol in the base specification."
+    - "Include board-specific top-level integration inside the core module spec."
+    - "Optimize for all SPI modes in the initial revision."
+  assumptions:
+    - "The common protocol is defined in terms of SPI signal edges and frame behavior."
+    - "The initial revision targets SPI Mode 0 and fixed 8-bit frames only."
+    - "The synthesizable implementation shall realize protocol shift, bit-count, and frame-boundary behavior in the sclk domain and shall use explicit CDC for interactions with any separate clk-domain byte/control logic."
+    - "The slave is selected when cs_n is asserted low."
+    - "Board-specific hookup is handled by a separate top wrapper when needed."
+  out_of_scope:
+    - "SPI modes 1, 2, and 3."
+    - "Dual-SPI, Quad-SPI, or other multi-I/O extensions."
+    - "Multi-slave arbitration."
+    - "DMA, interrupts, and software-facing register-map standardization."
+
+target:
+  platform:
+    vendor: xilinx
+    family: artix7
+    part: xc7a35tcpg236-1
+    board: Basys3
+  tools:
+    vivado: "2024.1"
+    vitis: null
+    simulator: xsim
+  operating_mode: out_of_context
+  deliverables:
+    - rtl
+    - testbench
+    - spec
+
+architecture:
+  top_module: spi_slave_bfm
+  language: systemverilog
+
+  clocking:
+    domains:
+      - name: clk
+        frequency_mhz: null
+        source: external
+        role: "Internal system clock for byte-side control/status interfacing and non-SPI integration logic."
+      - name: sclk
+        frequency_mhz: null
+        source: spi_input
+        role: "External SPI clock domain used for protocol-engine shift, bit-count, and frame-boundary behavior."
+    notes:
+      - "The specification defines SPI behavior directly in terms of qualified sclk rising and falling edges while cs_n is low."
+      - "The synthesizable SPI protocol engine shall operate in the sclk domain for shift, bit-count, and frame-boundary detection."
+      - "clk and sclk shall be treated as distinct clock domains for implementation and verification purposes."
+      - "Transfers between the sclk-domain protocol engine and the clk-domain byte/control interface shall use explicit clock-domain-crossing logic."
+
+  reset:
+    signals:
+      - name: rst_n
+        active_level: low
+        synchronous: true
+        affects:
+          - "internal state"
+          - "shift register state"
+          - "bit counter"
+          - "valid pulse generation"
+
+  interfaces:
+    - name: spi_core_io
+      kind: spi_slave_core
+      role: slave
+      description: "Synthesizable core-facing SPI interface. Protocol-level MISO behavior is expressed through miso_o plus miso_oe rather than a direct tri-stated top-level pad."
+      signals:
+        - { name: sclk, dir: in, width: 1 }
+        - { name: cs_n, dir: in, width: 1 }
+        - { name: mosi, dir: in, width: 1 }
+        - { name: miso_o, dir: out, width: 1 }
+        - { name: miso_oe, dir: out, width: 1 }
+    - name: tx_byte_if
+      kind: custom_stream
+      role: input
+      description: "Transmit-byte preload interface. tx_data and tx_valid provide the candidate transmit byte for frame start."
+      signals:
+        - { name: tx_data, dir: in, width: 8 }
+        - { name: tx_valid, dir: in, width: 1 }
+    - name: rx_byte_if
+      kind: custom_stream
+      role: output
+      description: "Received-byte result interface. rx_data is valid only when rx_valid pulses for a completed 8-bit frame."
+      signals:
+        - { name: rx_data, dir: out, width: 8 }
+        - { name: rx_valid, dir: out, width: 1 }
+
+  parameters:
+    - name: DEFAULT_TX_BYTE
+      type: logic[7:0]
+      default: 8'h00
+      description: "Byte shifted out when cs_n is active and no valid transmit byte is available."
+
+  submodules:
+    - name: spi_slave_common
+      role: "Defines common SPI protocol behavior including frame boundaries, CS handling, edge-qualified sampling/update semantics, and nominal MISO behavior."
+    - name: spi_slave_core
+      role: "Implements synthesizable byte-level slave behavior including RX/TX shift registers, bit counter, frame completion handling, rx_valid pulse generation, and MISO output-enable control."
+    - name: spi_slave_bfm_ext
+      role: "Provides simulation-only task APIs, response queueing or memory-backed response generation, logging, protocol error injection, and self-checking hooks."
+
+  data_path:
+    rx_path:
+      description: "Serial MOSI bits are sampled on qualified rising sclk edges during an active frame and accumulated into an 8-bit receive shift register."
+      elements:
+        - "Qualified MOSI sample point"
+        - "8-bit RX shift register"
+        - "Received-byte latch"
+    tx_path:
+      description: "A transmit byte selected at frame start drives MISO bit 7 before the first qualified rising sclk edge and then shifts toward MISO across qualified falling-edge update events during an active frame."
+      elements:
+        - "Transmit-byte select (preloaded byte or DEFAULT_TX_BYTE)"
+        - "8-bit TX shift register"
+        - "MISO output bit path"
+        - "MISO output-enable control"
+    frame_tracking:
+      description: "Tracks per-frame bit position and determines complete versus aborted frame outcomes, with any additional sclk activity ignored after normal 8-bit completion until cs_n returns high."
+      elements:
+        - "3-bit or equivalent bit counter for 8-bit frame progress"
+        - "Frame-active state"
+        - "Frame-complete indication"
+        - "Abort qualification on cs_n deassertion before completion"
+    bfm_extension:
+      description: "Simulation-only storage and helper structures provide queued or memory-backed response generation, logging metadata, and negative-test instrumentation without changing nominal protocol semantics."
+      elements:
+        - "Response queue or memory-backed source"
+        - "Protocol event log"
+        - "Error injection controls"
+        - "Self-checking expectation state"
+
+  control_path:
+    layering:
+      - "Common protocol behavior"
+      - "Synthesizable slave requirements"
+      - "BFM-only features"
+    frame_control:
+      description: "Detects frame start on cs_n assertion, counts qualified bit events, declares frame completion after 8 valid samples, and flags mid-frame abort on early cs_n deassertion."
+    tx_control:
+      description: "Loads the transmit shift register at frame start using tx_data when tx_valid is asserted, otherwise uses DEFAULT_TX_BYTE."
+    rx_control:
+      description: "Commits the received byte and generates a one-cycle rx_valid pulse only for complete 8-bit frames."
+    bfm_control:
+      description: "Coordinates simulation-only preload, queued response consumption, logging, and injected protocol anomaly sequencing."
+
+functional_spec:
+  behavior: |
+    The design shall implement an SPI slave operating in Mode 0 with a fixed frame width of 8 bits.
+    The slave shall participate in transfers only while cs_n is asserted low.
+    A frame begins on a qualified cs_n high-to-low transition and ends either when the 8th qualified rising edge of sclk is accepted or when cs_n is deasserted early before that 8th qualified rising edge.
+    During an active frame, the slave shall sample MOSI on each qualified rising edge of sclk and shall update MISO on each qualified falling edge of sclk.
+    MISO shall remain stable around the master's sampling edge.
+    The receive path shall assemble exactly 8 sampled MOSI bits into one receive byte.
+    The transmit path shall shift one selected transmit byte across the same frame.
+    At frame start, the transmit byte shall come from tx_data when tx_valid is asserted; otherwise the transmit byte shall be DEFAULT_TX_BYTE.
+    At frame start, the selected transmit byte shall be loaded such that MISO presents the first transmit bit before the first qualified rising edge of sclk in that frame.
+    After a full 8-bit frame completes normally, any additional sclk activity while cs_n remains low shall be ignored by the synthesizable layer and shall not generate additional receive bytes, rx_valid pulses, or continued MISO shifting.
+    When a full 8-bit frame completes normally, the synthesizable layer shall present rx_data and assert rx_valid for one clk cycle.
+    If cs_n deasserts before the 8th sampled bit, the frame is aborted and no receive-valid pulse shall be generated for that partial frame.
+    When cs_n is inactive, the core shall express inactive MISO behavior through the defined output-enable policy rather than actively driving a valid data bit.
+    The synthesizable SPI protocol engine shall operate in the sclk domain for shift, bit-count, and frame-boundary behavior, and any interaction with a separate clk-domain byte/control interface shall use explicit CDC logic.
+    The BFM-only layer may extend the design with task APIs, queued or memory-backed transmit responses, logging, protocol anomaly injection, and self-checking hooks, but those additions shall not change nominal common protocol semantics.
+
+  state_machines:
+    - name: frame_control
+      description: "Tracks idle, active, complete, and aborted frame conditions based on cs_n and qualified bit progression."
+    - name: tx_load_control
+      description: "Selects the frame transmit byte from tx_data or DEFAULT_TX_BYTE at frame start."
+    - name: bfm_extension_control
+      description: "Coordinates simulation-only response source selection, protocol anomaly injection, and expectation tracking when BFM extensions are enabled."
+
+  transaction_rules:
+    - "A frame begins on a qualified cs_n high-to-low transition."
+    - "Exactly 8 qualified rising-edge MOSI sample events define one complete nominal frame."
+    - "The transmit byte for a frame shall be selected at frame start and shall remain the source for that frame's shifted MISO bits."
+    - "At frame start, the selected transmit byte shall be loaded so that the first transmit bit is present on MISO before the first qualified rising sclk edge of the frame."
+    - "MISO updates shall occur only on qualified falling sclk edges while cs_n is low."
+    - "MOSI samples shall occur only on qualified rising sclk edges while cs_n is low."
+    - "rx_valid shall pulse for exactly one clk cycle for each completed 8-bit frame."
+    - "A received byte may influence transmit data only for a subsequent frame, not retroactively for the current in-flight frame."
+    - "The synthesizable interface shall not require backpressure to accept a completed received byte."
+
+  corner_cases:
+    - "cs_n deasserted in the middle of a frame before 8 sampled bits are collected."
+    - "Extra sclk activity while cs_n remains low beyond the nominal 8-bit frame boundary; the synthesizable layer shall ignore such activity until cs_n returns high."
+    - "No tx_valid present at frame start, requiring DEFAULT_TX_BYTE fallback."
+    - "Back-to-back frames with minimal cs_n idle spacing."
+    - "Reset asserted while a frame is in progress."
+    - "Protocol anomaly injection in BFM mode for short frames, extra clocks, or forced mid-frame chip-select release."
+
+  error_handling:
+    - "Partial frames aborted by cs_n deassertion shall not produce rx_valid and shall not be reported as complete receive bytes."
+    - "Missing transmit preload in the synthesizable layer shall not stall operation; DEFAULT_TX_BYTE shall be shifted instead."
+    - "Additional sclk activity after normal 8-bit frame completion while cs_n remains low shall be ignored by the synthesizable layer and shall not create a second completion event."
+    - "Unexpected or non-nominal protocol sequences introduced in BFM mode may be logged and checked by self-checking hooks without redefining the nominal slave contract."
+
+rules:
+  fixed_latency_cycles: null
+  allow_backpressure: false
+  max_clock_domains: 2
+  output_must_reset_to_zero: false
+  require_no_x_after_reset: true
+  allow_latches: false
+  frame_width_bits: 8
+  spi_mode: 0
+  require_rx_valid_single_cycle_pulse: true
+  require_abort_suppresses_rx_valid: true
+  require_miso_oe_inactive_when_cs_high: true
+
+performance:
+  freq_target_mhz: 100
+  latency:
+    cycles: 8
+    type: fixed
+  throughput:
+    inputs_per_cycle: 1
+    outputs_per_cycle: 1
+  utilization_budget:
+    lut_max: null
+    ff_max: null
+    dsp_max: 0
+    bram_max: 0
+  power_budget:
+    dynamic_mw: null
+    static_mw: null
+
+implementation_constraints:
+  synthesis:
+    infer_dsp: avoid
+    infer_bram: avoid
+    flatten_hierarchy: rebuilt
+    prefer_shift_register_inference: true
+  implementation:
+    strategy: default
+  coding_rules:
+    - "Use always_ff for sequential logic"
+    - "Use always_comb for combinational logic"
+    - "Do not infer latches"
+    - "Do not use #delay in synthesizable code"
+    - "Separate synthesizable logic from simulation-only BFM features"
+    - "Keep protocol edge interpretation explicit and do not mix rising-edge sample semantics with falling-edge update semantics"
+    - "Do not change transmit data source in the middle of an active frame"
+    - "Represent inactive MISO behavior through miso_oe control rather than by overloading data semantics"
+  ip_policy:
+    allow_vendor_ip: false
+    allow_generated_ip: false
+  cdc_policy:
+    allowed_clock_domains: 2
+    async_crossings_allowed: true
+    note: "The synthesizable SPI protocol engine shall operate in the sclk domain. Crossings between the sclk-domain protocol engine and any separate clk-domain byte/control interface shall use explicit CDC logic."
+  reset_policy:
+    default_reset_style: synchronous_active_low
+    reset_expectations:
+      - "Reset shall clear frame-progress state, bit counter state, and rx_valid pulse state."
+      - "Reset shall leave the core in an idle, non-frame-active condition."
+      - "Reset shall not permit unknown-valued synthesizable outputs after reset release."
+
+verification:
+  strategy:
+    - directed_test
+    - protocol_check
+    - negative_test
+    - self_checking_bfm
+  bfm_extensions:
+    control_api:
+      description: "Simulation-only BFM control surface for preload, response generation, logging, protocol error injection, and self-checking hooks."
+      tasks:
+        - preload_tx_byte
+        - queue_tx_byte
+        - inject_short_frame
+        - inject_mid_frame_cs_deassert
+        - inject_extra_clocks
+        - expect_rx_byte
+      logging_hooks: true
+      error_injection: true
+      self_checking_hooks: true
+  testbenches:
+    - name: spi_slave_bfm_tb
+      kind: self_checking
+      description: "Exercises common protocol behavior, synthesizable slave behavior, and BFM-only extensions where applicable."
+    - name: spi_slave_core_tb
+      kind: directed
+      description: "Focuses on the synthesizable RX/TX byte interface, frame completion, abort handling, and output-enable behavior."
+  test_vectors:
+    - name: nominal_preloaded_tx
+      description: "Single complete 8-bit frame with tx_valid asserted before frame start and a known transmit byte shifted out."
+    - name: default_tx_fallback
+      description: "Single complete 8-bit frame with no valid transmit preload so DEFAULT_TX_BYTE is shifted."
+    - name: next_frame_response
+      description: "Receive one byte in frame N and use it to influence the queued or selected transmit byte for frame N+1."
+    - name: back_to_back_frames
+      description: "Two or more complete frames with minimal cs_n idle spacing."
+    - name: mid_frame_abort
+      description: "Assert cs_n high before 8 sampled bits are collected and verify that rx_valid does not pulse."
+    - name: extra_clock_anomaly
+      description: "Drive extra sclk activity beyond the nominal 8-bit frame and verify defined negative-test handling."
+    - name: reset_recovery
+      description: "Assert reset around idle and active-frame conditions and verify deterministic post-reset behavior."
+  assertions:
+    - "rx_valid shall assert for exactly one clk cycle on each complete 8-bit frame"
+    - "rx_valid shall not assert for aborted partial frames"
+    - "miso_o shall update only on qualified falling sclk edges during active frame operation"
+    - "mosi shall be sampled only on qualified rising sclk edges during active frame operation"
+    - "The selected transmit byte shall be loaded at frame start such that the first transmit bit is present before the first qualified rising sclk edge of the frame"
+    - "Extra qualified sclk edges after normal 8-bit completion while cs_n remains low shall not generate additional receive completions or further MISO shifting"
+    - "miso_oe shall deassert when cs_n is inactive unless a simulation-only wrapper intentionally overrides pad behavior"
+    - "The transmit byte used in a frame shall not change mid-frame after frame-start selection"
+  coverage:
+    targets:
+      - "nominal frame complete"
+      - "frame abort"
+      - "default tx path"
+      - "preloaded tx path"
+      - "next-frame response path"
+      - "reset during idle"
+      - "reset during active frame"
+      - "BFM error injection paths"
+    line_target_pct: null
+    branch_target_pct: null
+  pass_criteria:
+    - "All directed and self-checking tests complete with zero mismatches and zero fatal errors."
+    - "Complete 8-bit frames produce correct rx_data values and exactly one rx_valid pulse per completed frame."
+    - "Mode-0 timing behavior is preserved: MOSI is sampled on qualified rising sclk edges and MISO is updated on qualified falling sclk edges while cs_n is low."
+    - "At frame start, the first transmit bit is present before the first qualified rising sclk edge of the frame."
+    - "Additional qualified sclk activity after normal 8-bit completion while cs_n remains low is ignored by the synthesizable layer."
+    - "Aborted partial frames do not produce receive-valid pulses or falsely reported complete bytes."
+    - "BFM-only features do not change the defined common protocol semantics for nominal transactions."
+    - "No X or Z shall appear on synthesizable core outputs after reset release except where high-impedance behavior is intentionally represented through output-enable policy."
+
+tool_flow:
+  sources:
+    rtl_dir: rtl/
+    tb_dir: tb/
+    xdc_dir: null
+  scripts:
+    sim: null
+    synth: null
+    impl: null
+  build_steps:
+    - simulate
+    - synthesize
+  reports:
+    - timing_summary
+    - utilization
+  artifacts:
+    - rtl
+    - testbench
+    - simulation_log
+
+integration:
+  register_map: []
+  memory_map: {}
+  interrupts: []
+  software_contract: {}
+  external_dependencies: []
+
+agent_guidance:
+  generation_hints:
+    - "Consult spec-stage/domain-knowledge for reusable board/tool/protocol context when needed."
+    - "Keep common SPI protocol behavior independent from simulation-only helper APIs."
+    - "If a board connection is needed, implement it in a separate top wrapper rather than in the core module."
+  forbidden_patterns:
+    - "Do not mix simulation-only task logic into synthesizable always_ff/always_comb data path logic."
+    - "Do not drive MISO as an actively valid data pin while cs_n is inactive unless a wrapper explicitly models output-enable behavior."
+  review_checklist:
+    - "Verify Mode 0 edge behavior is stated consistently across architecture, functional_spec, and verification."
+    - "Verify fixed 8-bit frame semantics are consistent across RX, TX, and abort rules."
+    - "Verify common behavior, synthesizable requirements, and BFM-only features remain layered and non-conflicting."
+  repair_policy:
+    prioritize:
+      - functional_correctness
+      - timing_closure
+      - low_complexity
+    do_not_change:
+      - "Mode 0 operation"
+      - "8-bit fixed frame size"
+      - "Layered separation between common, synthesizable, and BFM-only behavior"
+  iteration_protocol:
+    max_repair_attempts: 3
+    escalation: ask_human
+    allow_spec_relaxation: false
+    relaxable_fields: []
+
+variant_spec:
+  rtl_module_spec:
+    synthesizable: true
+    single_clock_domain: false
+    combinational_only: false
+    preferred_templates:
+      - shift_register
+      - edge_qualified_spi_slave
+      - self_checking_bfm_tb
+    target_coding_style: implicit_pipeline
+
+traceability:
+  requirements:
+    - id: REQ-SPI-001
+      text: "The slave shall operate in SPI Mode 0."
+    - id: REQ-SPI-002
+      text: "The slave shall use a fixed 8-bit frame length."
+    - id: REQ-SPI-003
+      text: "The slave shall sample MOSI on each rising edge of sclk while cs_n is low."
+    - id: REQ-SPI-004
+      text: "The slave shall update MISO on each falling edge of sclk while cs_n is low."
+    - id: REQ-SPI-005
+      text: "The synthesizable layer shall generate rx_valid for exactly one clk cycle after each complete frame."
+    - id: REQ-SPI-006
+      text: "The BFM-only layer may add tasks, queues, logging, error injection, and self-checking hooks without changing nominal common protocol behavior."
+
+glossary:
+  - term: BFM
+    definition: "Bus Functional Model used for simulation-oriented interaction and checking."
+  - term: Mode 0
+    definition: "SPI mode with CPOL=0 and CPHA=0; data is sampled on rising edges and updated on falling edges."
+  - term: frame
+    definition: "An 8-bit SPI transfer performed while cs_n remains asserted low."
+
+unresolved_decisions:
+  - "Exact internal implementation method for MISO tri-state exposure in synthesizable RTL (direct output vs output-enable wrapper split)."
+  - "Whether future revisions should extend the common layer to support additional SPI modes."
+
+open_questions:
+  - "Should a future revision add explicit tx_ready semantics to the synthesizable interface?"
+  - "Should a future revision define an optional command/address phase above the 8-bit common frame layer?"
+
+acceptance_criteria:
+  - "A complete spec document exists covering common SPI behavior, synthesizable slave requirements, and BFM-only extensions."
+  - "The spec explicitly defines Mode 0 timing with separate MOSI sampling and MISO update rules."
+  - "The spec is sufficient to generate both a synthesizable RTL implementation and a richer simulation-oriented BFM testbench."
