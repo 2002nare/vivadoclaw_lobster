@@ -71,6 +71,26 @@ OpenClaw  --->  Lobster Workflow  --->  step 1: Tcl Script (Vivado action)
                                   --->  ...
 ```
 
+## End-to-end AI Agent example
+
+The `examples/` directory also includes a full **AI Agent-driven hardware development example** that shows what this stack can do in just a few hours of iterative work.
+
+Example:
+- `examples/spi_slave_basys3_from_spec/`
+
+That example captures an end-to-end pipeline:
+- **spec definition**
+- **testbench plan generation**
+- **testbench generation/refinement**
+- **RTL programming / implementation**
+- **behavioral simulation**
+- **synthesis / implementation**
+- **bitstream generation**
+
+In other words, it is not just a workflow demo in isolation — it is a concrete example of taking a structured spec, letting AI agents drive the intermediate steps, and landing on a board-targeted Vivado build artifact.
+
+The current SPI example should be understood as a **spec-derived bring-up example** rather than a fully final reference design, but it demonstrates the full pipeline from design intent to FPGA-ready output.
+
 ## Workflows
 
 ### Vivado
