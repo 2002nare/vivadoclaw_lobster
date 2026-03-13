@@ -1,0 +1,1696 @@
+{
+  "document_type": "verification_plan",
+  "plan_name": "spi_slave_bfm_incremental_testbench_plan",
+  "plan_version": 2,
+  "source_spec": {
+    "yaml": "/home/appuser/vivadoclaw_lobster/spec-stage/examples/spi_slave_bfm.spec.yaml",
+    "json": "/home/appuser/vivadoclaw_lobster/spec-stage/examples/spi_slave_bfm.spec.json"
+  },
+  "scope": {
+    "planning_only": true,
+    "generates_code": false,
+    "includes_uvm": false,
+    "primary_bringup_target": "spi_slave_core_with_early_contract_checks",
+    "deferred_target": "spi_slave_bfm_feature_semantics",
+    "verification_readiness": "strengthened_after_gap_review"
+  },
+  "sections": {
+    "spec_summary": {
+      "dut": {
+        "synthesizable_top_module": "spi_slave_core",
+        "simulation_top_module": "spi_slave_bfm",
+        "design_kind": "layered_design",
+        "language": "systemverilog",
+        "functional_purpose": [
+          "SPI slave operating in Mode 0",
+          "Fixed 8-bit frame handling",
+          "Synthesizable byte-oriented slave core",
+          "Simulation-only BFM wrapper for master verification"
+        ]
+      },
+      "clock_reset": {
+        "clock_domains": [
+          {
+            "name": "clk",
+            "role": "Internal byte/control interface domain",
+            "frequency_mhz": null
+          },
+          {
+            "name": "sclk",
+            "role": "External SPI protocol engine domain",
+            "frequency_mhz": null
+          }
+        ],
+        "reset": {
+          "name": "rst_n",
+          "active_level": "low",
+          "assertion": "asynchronous",
+          "deassertion": "synchronized independently into clk and sclk domains",
+          "specified_reset_values": {
+            "frame_active": 0,
+            "frame_complete": 0,
+            "bit_count": 0,
+            "rx_valid": 0,
+            "miso_oe": 0,
+            "rx_data": "8'h00",
+            "miso_o": "1'b0"
+          },
+          "reset_rules": [
+            "Any sclk or cs_n activity during reset shall be ignored",
+            "No completion or rx_valid pulse may be generated from partial pre-reset state",
+            "Both domains resume from idle after synchronized release"
+          ]
+        }
+      },
+      "interfaces": {
+        "spi_core_io": {
+          "role": "slave",
+          "signals": [
+            {
+              "name": "sclk",
+              "dir": "in",
+              "width": 1
+            },
+            {
+              "name": "cs_n",
+              "dir": "in",
+              "width": 1
+            },
+            {
+              "name": "mosi",
+              "dir": "in",
+              "width": 1
+            },
+            {
+              "name": "miso_o",
+              "dir": "out",
+              "width": 1
+            },
+            {
+              "name": "miso_oe",
+              "dir": "out",
+              "width": 1
+            }
+          ]
+        },
+        "tx_byte_if": {
+          "role": "input",
+          "domain": "clk",
+          "signals": [
+            {
+              "name": "tx_data",
+              "dir": "in",
+              "width": 8
+            },
+            {
+              "name": "tx_valid",
+              "dir": "in",
+              "width": 1
+            }
+          ]
+        },
+        "rx_byte_if": {
+          "role": "output",
+          "domain": "clk",
+          "signals": [
+            {
+              "name": "rx_data",
+              "dir": "out",
+              "width": 8
+            },
+            {
+              "name": "rx_valid",
+              "dir": "out",
+              "width": 1
+            }
+          ]
+        }
+      },
+      "parameters": [
+        {
+          "name": "DEFAULT_TX_BYTE",
+          "type": "logic[7:0]",
+          "default": "8'h00",
+          "description": "Byte shifted when no valid TX preload is available"
+        }
+      ],
+      "transaction_definition": {
+        "frame_width_bits": 8,
+        "spi_mode": 0,
+        "bit_order": "msb_first",
+        "frame_start": {
+          "description": "Active frame begins only on first counted rising sclk edge after cs_n was previously high and legal-start conditions are met",
+          "pending_start_interval": "Between cs_n falling and first counted rising edge"
+        },
+        "frame_complete": {
+          "description": "Frame completes on the 8th qualified rising edge"
+        },
+        "abort": {
+          "description": "If cs_n rises before 8th qualified rising edge, frame is aborted and completion is suppressed"
+        },
+        "frame_rearm": {
+          "description": "A new frame cannot begin until cs_n returns high and then low again"
+        }
+      },
+      "timing_rules": {
+        "sampling": {
+          "mosi_sample_edge": "qualified_rising_sclk",
+          "miso_update_edge": "qualified_falling_sclk"
+        },
+        "first_bit_rule": {
+          "description": "At legal frame start, selected transmit bit[7] shall already be present on miso_o and miso_oe asserted before the first counted rising edge"
+        },
+        "post_complete_rule": {
+          "description": "Additional sclk activity while cs_n remains low after normal completion shall be ignored"
+        },
+        "external_assumptions": [
+          "cs_n low and stable before first counted rising edge for legal start",
+          "cs_n remains low through that first counted rising edge",
+          "MOSI satisfies setup/hold to qualified rising edges at package boundary",
+          "T_CSS_MIN is an external requirement, not internally measured by DUT"
+        ]
+      },
+      "valid_enable_semantics": {
+        "rx_valid": {
+          "type": "one_cycle_pulse_in_clk_domain",
+          "asserted_for": "completed_8bit_frame_only",
+          "suppressed_for": "aborted_or_ignored_frame"
+        },
+        "miso_oe": {
+          "active_high": true,
+          "inactive_behavior": "When 0, MISO has no electrical effect; miso_o may retain prior value"
+        }
+      },
+      "cdc_contracts": {
+        "tx_path": {
+          "description": "sclk-domain frame-start logic must use coherent shadow copy of tx preload; direct sampling of clk-domain tx_data/tx_valid is forbidden"
+        },
+        "rx_path": {
+          "description": "reported clk-domain completion must correspond to one coherent received byte; if events collapse before observation, only latest completed byte must be preserved"
+        }
+      },
+      "explicit_corner_cases": [
+        "mid_frame_cs_deassert_before_8_bits",
+        "extra_clocks_after_8bit_completion_with_cs_low",
+        "no_tx_valid_default_tx_fallback",
+        "back_to_back_frames_with_minimal_cs_idle_spacing",
+        "tx_change_after_frame_start_selection",
+        "reset_during_active_frame",
+        "bfm_only_short_frame_extra_clocks_midframe_cs_release"
+      ],
+      "constraints_affecting_tb_structure": [
+        "Testbench must model clk and sclk as independent domains",
+        "Testbench must distinguish legal timing cases from unspecified setup/hold violations",
+        "Core bring-up should precede BFM-only feature verification",
+        "Early checking should prefer frame-level directed reference behavior over a complex scoreboard"
+      ]
+    },
+    "ambiguities_and_planning_assumptions": {
+      "items": [
+        {
+          "id": "A1",
+          "ambiguous_requirement": "Which module should be primary target for first TB bring-up",
+          "why_it_matters": "Architecture and checker scope differ between spi_slave_core and spi_slave_bfm",
+          "planning_assumption": "Bring-up starts with spi_slave_core; spi_slave_bfm is a later extension",
+          "risk": "low"
+        },
+        {
+          "id": "A2",
+          "ambiguous_requirement": "Exact clk and sclk frequency relationship is not specified",
+          "why_it_matters": "CDC-sensitive checks and rx_valid timing observation depend on relative rates",
+          "planning_assumption": "Start with stable independent clocks and clk comfortably faster than sclk, then vary later",
+          "risk": "medium"
+        },
+        {
+          "id": "A3",
+          "ambiguous_requirement": "T_CSS_MIN and cs-high re-arm timing are externally required but not numerically defined here",
+          "why_it_matters": "Legal vs illegal start classification depends on them",
+          "planning_assumption": "Legal tests use clearly separated timing; illegal-start tests use only digitally obvious violations away from exclusion windows",
+          "risk": "high"
+        },
+        {
+          "id": "A4",
+          "ambiguous_requirement": "Internal state visibility for frame_active/frame_complete/bit_count is unspecified",
+          "why_it_matters": "Strong internal state assertions may not be portable across implementations",
+          "planning_assumption": "External black-box checking is primary; internal visibility is optional debug aid only",
+          "risk": "medium"
+        },
+        {
+          "id": "A5",
+          "ambiguous_requirement": "Exact rx_valid timing wording may be interpreted differently at the clk-domain observation boundary",
+          "why_it_matters": "Off-by-one-cycle failures are likely if checker meaning is wrong",
+          "planning_assumption": "Treat rx_valid as a deterministic one-cycle clk pulse with strict timing per contract, but keep checker modular",
+          "risk": "medium"
+        },
+        {
+          "id": "A6",
+          "ambiguous_requirement": "Whether collapsed multiple completions must be tested early",
+          "why_it_matters": "This is a complex lossy CDC corner that can obscure simpler bugs",
+          "planning_assumption": "Defer collapse-stress behavior to a late stage",
+          "risk": "medium"
+        },
+        {
+          "id": "A7",
+          "ambiguous_requirement": "Exact value significance of miso_o when miso_oe is 0",
+          "why_it_matters": "Inactive data should not cause false failures",
+          "planning_assumption": "Strongly check miso_oe inactivity; strongly check miso_o only when enabled or explicitly reset-defined",
+          "risk": "low"
+        },
+        {
+          "id": "A8",
+          "ambiguous_requirement": "Exact immediacy of miso_oe deassertion when cs_n rises",
+          "why_it_matters": "Overly cycle-exact assertions may be brittle",
+          "planning_assumption": "Enforce miso_oe inactive when cs_n is high, but do not overconstrain sub-cycle timing in early TB",
+          "risk": "medium"
+        },
+        {
+          "id": "A9",
+          "ambiguous_requirement": "Exact digitally observable illegal-start definition",
+          "why_it_matters": "Negative tests need a reproducible condition outside unspecified timing windows",
+          "planning_assumption": "Use clean digital violations where cs_n is not stably low across the first attempted counted rising edge",
+          "risk": "high"
+        },
+        {
+          "id": "A10",
+          "ambiguous_requirement": "Whether next-frame response is intrinsic core behavior or environment-driven use case",
+          "why_it_matters": "Could incorrectly imply autonomous response generation inside core",
+          "planning_assumption": "For spi_slave_core, verify only that later preload can affect a later frame, not that RX automatically feeds TX",
+          "risk": "medium"
+        },
+        {
+          "id": "A11",
+          "ambiguous_requirement": "Required post-reset settling interval before legal traffic",
+          "why_it_matters": "Immediately driving traffic after reset release may create ambiguous results with synchronized deassertion",
+          "planning_assumption": "Wait several clk and sclk cycles after reset release before nominal traffic",
+          "risk": "low"
+        },
+        {
+          "id": "A12",
+          "ambiguous_requirement": "BFM anomaly injection behavior may be only partially specified",
+          "why_it_matters": "Late-stage checks may need to be weaker and more observational",
+          "planning_assumption": "BFM anomaly tests verify compatibility with nominal semantics and presence of expected hooks/logging, not deep micro-behavior",
+          "risk": "medium"
+        },
+        {
+          "id": "A13",
+          "ambiguous_requirement": "Exact post-completion held value of miso_o after extra clocks",
+          "why_it_matters": "Spec strongly prohibits further shifting but does not force a new data value",
+          "planning_assumption": "Check that no further MISO advancement occurs, not a particular held bit value",
+          "risk": "low"
+        },
+        {
+          "id": "A14",
+          "ambiguous_requirement": "Whether CDC mechanism must literally be toggle-based",
+          "why_it_matters": "Checker should verify contract, not a single implementation style",
+          "planning_assumption": "Verify observable coherent-selection and coherent-reporting behavior only",
+          "risk": "low"
+        },
+        {
+          "id": "A15",
+          "ambiguous_requirement": "Exact semantic contract of BFM queue consumption and expectation-hook failure reporting is only partly implied by the spec text",
+          "why_it_matters": "A weak BFM test could prove hook wiring without proving that the helper APIs preserve nominal semantics or report mismatches correctly",
+          "planning_assumption": "Verify observable per-frame queue consumption order, nominal semantic equivalence against direct pin driving, and both pass/fail expectation-hook paths without constraining internal logging implementation",
+          "risk": "medium"
+        }
+      ]
+    },
+    "incremental_verification_strategy": {
+      "philosophy": [
+        "Verify reset and idle behavior before transactions",
+        "Verify one legal minimal frame before multiple frames",
+        "Verify nominal completion before abort and invalid cases",
+        "Verify simple deterministic data patterns before stress and corner cases",
+        "Introduce only one major new complexity axis per stage where possible",
+        "Promote exact clk-domain reporting checks out of optional stress and into the main correctness path"
+      ],
+      "primary_target_order": [
+        "spi_slave_core first",
+        "spi_slave_bfm extension later"
+      ],
+      "stages": [
+        {
+          "stage_id": 0,
+          "name": "testbench_infrastructure_sanity",
+          "purpose": "Prove clocks, reset, connectivity, and simulation observations work before protocol debugging"
+        },
+        {
+          "stage_id": 1,
+          "name": "reset_and_idle_behavior",
+          "purpose": "Prove deterministic reset values and idle behavior with cs_n high"
+        },
+        {
+          "stage_id": 2,
+          "name": "minimum_legal_transaction_frame",
+          "purpose": "Verify one legal 8-bit frame with preloaded TX and one receive completion"
+        },
+        {
+          "stage_id": 3,
+          "name": "clk_domain_report_contract",
+          "purpose": "Verify exact rx_valid latency, pulse width, and rx_data stability obligations in the clk domain"
+        },
+        {
+          "stage_id": 4,
+          "name": "basic_functional_progression",
+          "purpose": "Add default-TX fallback and frame-start TX immutability"
+        },
+        {
+          "stage_id": 5,
+          "name": "representative_data_path_checks",
+          "purpose": "Add data-pattern confidence for MSB-first mapping and edge alignment"
+        },
+        {
+          "stage_id": 6,
+          "name": "boundary_and_corner_cases",
+          "purpose": "Add 8th-edge completion boundary and post-completion extra-clock ignore behavior"
+        },
+        {
+          "stage_id": 7,
+          "name": "abort_reset_invalid_sequence_handling",
+          "purpose": "Add abort, reset-during-frame, and illegal-start behavior"
+        },
+        {
+          "stage_id": 8,
+          "name": "back_to_back_and_repeated_operation",
+          "purpose": "Add repeated legal frame operation, next-frame effects, and frame-to-frame separation checks"
+        },
+        {
+          "stage_id": 9,
+          "name": "stress_and_bfm_semantics",
+          "purpose": "Add clock-ratio variation, collapse behavior, queue semantics, and BFM-only extension checks"
+        }
+      ]
+    },
+    "stage_by_stage_test_plan": {
+      "stages": [
+        {
+          "stage_id": 0,
+          "stage_name": "testbench_infrastructure_sanity",
+          "why_now": "Without a trusted harness, later failures are hard to localize",
+          "new_behavior_introduced": [
+            "clock_and_reset_generation",
+            "basic_output_observation"
+          ],
+          "preconditions": [],
+          "expected_observables": [
+            "clk toggles",
+            "sclk can be controlled independently",
+            "rst_n assertion and release are observable",
+            "outputs settle to known values after reset"
+          ],
+          "bug_localization_targets": [
+            "DUT instantiation issues",
+            "port miswiring",
+            "broken reset drive",
+            "broken clock generation",
+            "waveform observation mistakes"
+          ],
+          "checker_strength": "strong_for_connectivity_and_reset_visible_outputs",
+          "planned_tests": [
+            {
+              "test_name": "TB_CLK_RESET_SMOKE",
+              "objective": "Prove the simulation harness can start, drive both clocks, and perform reset cleanly",
+              "stimulus_concept": "Run clk and sclk, assert reset, release reset, keep SPI otherwise idle",
+              "expected_behavior": "Outputs match reset-defined values during reset and remain deterministic after release",
+              "key_pass_fail_criteria": [
+                "no fatal or persistent unknowns",
+                "miso_oe == 0 during reset",
+                "miso_o == 0 during reset",
+                "rx_valid == 0 during reset",
+                "rx_data == 8'h00 during reset"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-011",
+                "require_no_x_after_reset"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "TB_OUTPUT_CONNECTIVITY_SMOKE",
+              "objective": "Verify DUT outputs are visible and legal in idle state",
+              "stimulus_concept": "Hold cs_n high, cycle clocks, release reset, observe outputs",
+              "expected_behavior": "Idle outputs remain deterministic and legal",
+              "key_pass_fail_criteria": [
+                "rx_valid remains 0",
+                "miso_oe remains 0 when cs_n is high",
+                "no X or Z on synthesizable outputs after reset release"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-011"
+              ],
+              "dependencies": [
+                "A11"
+              ]
+            }
+          ]
+        },
+        {
+          "stage_id": 1,
+          "stage_name": "reset_and_idle_behavior",
+          "why_now": "Reset and idle bugs contaminate all later transaction tests",
+          "new_behavior_introduced": [
+            "ignore_spi_activity_during_reset",
+            "idle_behavior_with_cs_high"
+          ],
+          "preconditions": [
+            "stage_0_passed"
+          ],
+          "expected_observables": [
+            "exact reset values",
+            "no protocol effect from SPI activity during reset",
+            "no frame effect while cs_n is high",
+            "miso_oe inactive when unselected"
+          ],
+          "bug_localization_targets": [
+            "reset polarity errors",
+            "reset synchronization mistakes",
+            "protocol activity leaking through reset",
+            "inactive-MISO policy errors"
+          ],
+          "checker_strength": "strong",
+          "planned_tests": [
+            {
+              "test_name": "RESET_IDLE_BASELINE",
+              "objective": "Verify visible reset state and clean post-reset idle state",
+              "stimulus_concept": "Assert reset, release reset, keep cs_n high, no transaction",
+              "expected_behavior": "Exact reset values during reset; idle behavior after release",
+              "key_pass_fail_criteria": [
+                "outputs match spec during reset",
+                "rx_valid stays 0 after release while idle",
+                "miso_oe stays 0 after release while cs_n is high"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-011"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "IGNORE_SPI_ACTIVITY_DURING_RESET",
+              "objective": "Ensure sclk/cs_n/mosi activity during reset does not create latent completion",
+              "stimulus_concept": "Toggle SPI pins while rst_n is asserted, then release reset",
+              "expected_behavior": "No completion event or residual protocol effect from reset-period traffic",
+              "key_pass_fail_criteria": [
+                "rx_valid never pulses due to reset-period activity",
+                "post-release DUT starts cleanly from idle"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-005"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "IDLE_WITH_CS_HIGH",
+              "objective": "Verify no transaction progresses while chip select is inactive",
+              "stimulus_concept": "Hold cs_n high and toggle sclk with varying mosi",
+              "expected_behavior": "No receive completion and no active MISO drive",
+              "key_pass_fail_criteria": [
+                "rx_valid remains 0",
+                "miso_oe remains 0"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-011",
+                "REQ-SPI-012"
+              ],
+              "dependencies": [
+                "A8"
+              ]
+            }
+          ]
+        },
+        {
+          "stage_id": 2,
+          "stage_name": "minimum_legal_transaction_frame",
+          "why_now": "Smallest legal end-to-end protocol behavior with strongest debug value",
+          "new_behavior_introduced": [
+            "legal_frame_start",
+            "single_frame_rx_capture",
+            "single_frame_tx_shift",
+            "one_completion_event"
+          ],
+          "preconditions": [
+            "stage_1_passed"
+          ],
+          "expected_observables": [
+            "miso_oe asserted for selected frame",
+            "miso_o presents selected tx bit7 before first counted rising edge",
+            "mosi assembles into one rx byte",
+            "exactly one rx_valid pulse occurs"
+          ],
+          "bug_localization_targets": [
+            "wrong SPI mode",
+            "off_by_one bit counting",
+            "bad first-bit launch",
+            "wrong shift direction",
+            "bad completion generation"
+          ],
+          "checker_strength": "strict_spec_driven",
+          "planned_tests": [
+            {
+              "test_name": "SINGLE_LEGAL_FRAME_PRELOADED_TX_MIN",
+              "objective": "Verify one complete legal frame using known TX preload and known MOSI byte",
+              "stimulus_concept": "Publish valid tx preload well before frame start and drive one clean 8-bit legal frame",
+              "expected_behavior": "Preloaded byte shifts out MSB-first, MOSI byte is captured, one rx_valid pulse occurs",
+              "key_pass_fail_criteria": [
+                "correct MISO bit sequence",
+                "correct rx_data value",
+                "exactly one rx_valid pulse",
+                "no extra completion"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-001",
+                "REQ-SPI-002",
+                "REQ-SPI-003",
+                "REQ-SPI-004",
+                "REQ-SPI-005",
+                "REQ-SPI-007",
+                "REQ-SPI-008"
+              ],
+              "dependencies": [
+                "A3",
+                "A11"
+              ]
+            },
+            {
+              "test_name": "FIRST_BIT_PRESENT_BEFORE_FIRST_RISE",
+              "objective": "Isolate and verify the first-bit launch requirement at legal frame start",
+              "stimulus_concept": "Preload a byte with distinct bit7, assert cs_n legally, observe miso_o and miso_oe before first rising edge",
+              "expected_behavior": "miso_o already equals selected tx bit7 and miso_oe is already asserted before first counted rising edge",
+              "key_pass_fail_criteria": [
+                "first-bit value correct before first rising edge",
+                "miso_oe active before first rising edge"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-004",
+                "REQ-SPI-008"
+              ],
+              "dependencies": [
+                "A3",
+                "A8"
+              ]
+            }
+          ]
+        },
+        {
+          "stage_id": 3,
+          "stage_name": "clk_domain_report_contract",
+          "why_now": "The spec makes clk-domain reporting behavior normative; catching off-by-one CDC/reporting bugs early prevents false confidence from later byte-level tests.",
+          "new_behavior_introduced": [
+            "exact_rx_valid_latency_check",
+            "rx_data_stability_during_rx_valid",
+            "single_completion_to_single_pulse_mapping"
+          ],
+          "preconditions": [
+            "stage_2_passed"
+          ],
+          "expected_observables": [
+            "rx_valid asserts for exactly one clk cycle",
+            "rx_valid occurs exactly one clk edge after the completed frame is reported into the clk-domain interface contract",
+            "rx_data remains stable for the full clk cycle in which rx_valid is 1"
+          ],
+          "bug_localization_targets": [
+            "off_by_one rx_valid latency",
+            "double-pulse generation from one completion",
+            "rx_data instability during valid pulse",
+            "clk-domain event capture race bugs"
+          ],
+          "checker_strength": "strict_spec_driven",
+          "planned_tests": [
+            {
+              "test_name": "RX_VALID_SINGLE_CYCLE_AND_LATENCY_EXACT",
+              "objective": "Verify one completed legal frame produces exactly one rx_valid pulse with exact clk-domain latency per contract.",
+              "stimulus_concept": "Run one legal frame with clocks chosen so the sclk-domain completion and clk edges are easy to observe and correlate.",
+              "expected_behavior": "One and only one rx_valid pulse occurs, and it occurs on the required clk edge relative to reported completion.",
+              "key_pass_fail_criteria": [
+                "rx_valid pulse width is exactly one clk cycle",
+                "no early rx_valid assertion",
+                "no late rx_valid assertion",
+                "no second rx_valid pulse for the same frame"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-005",
+                "REQ-SPI-010"
+              ],
+              "dependencies": [
+                "A5"
+              ]
+            },
+            {
+              "test_name": "RX_DATA_STABLE_DURING_VALID",
+              "objective": "Verify rx_data is coherent and stable for the entire clk cycle in which rx_valid is asserted.",
+              "stimulus_concept": "Complete one legal frame with an asymmetric byte and sample rx_data throughout the rx_valid-high cycle.",
+              "expected_behavior": "rx_data matches the completed byte and remains unchanged while rx_valid is 1.",
+              "key_pass_fail_criteria": [
+                "rx_data matches the expected received byte",
+                "rx_data is stable for the full clk cycle where rx_valid == 1"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-005",
+                "REQ-SPI-010"
+              ],
+              "dependencies": [
+                "A5"
+              ]
+            },
+            {
+              "test_name": "SINGLE_COMPLETION_NO_DOUBLE_PULSE",
+              "objective": "Verify one completed frame cannot create more than one clk-domain pulse even when observation windows are stretched.",
+              "stimulus_concept": "Complete one legal frame, continue clk running, and monitor long enough to detect any duplicate reporting.",
+              "expected_behavior": "Exactly one rx_valid pulse is observed for the frame.",
+              "key_pass_fail_criteria": [
+                "one frame completion maps to at most one rx_valid pulse",
+                "rx_data remains the completed byte until any later independent completion"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-005",
+                "REQ-SPI-010"
+              ],
+              "dependencies": []
+            }
+          ]
+        },
+        {
+          "stage_id": 4,
+          "stage_name": "basic_functional_progression",
+          "why_now": "Adds alternate TX source handling only after nominal frame behavior and clk-domain reporting are already trusted.",
+          "new_behavior_introduced": [
+            "default_tx_fallback",
+            "tx_selection_immutability_within_frame"
+          ],
+          "preconditions": [
+            "stage_3_passed"
+          ],
+          "expected_observables": [
+            "DEFAULT_TX_BYTE used when tx_valid is 0",
+            "same-frame TX source does not change after frame start"
+          ],
+          "bug_localization_targets": [
+            "broken default path",
+            "accidental mid-frame TX resampling",
+            "frame-start selection not frozen"
+          ],
+          "checker_strength": "strong_for_observable_results_assumption_based_for_internal_cdc_mechanism",
+          "planned_tests": [
+            {
+              "test_name": "DEFAULT_TX_FALLBACK_SINGLE_FRAME",
+              "objective": "Verify transmit fallback when no valid preload exists",
+              "stimulus_concept": "Keep tx_valid low and drive one legal frame",
+              "expected_behavior": "MISO shifts DEFAULT_TX_BYTE while RX still captures MOSI normally",
+              "key_pass_fail_criteria": [
+                "observed MISO bits equal DEFAULT_TX_BYTE",
+                "rx_data matches MOSI byte",
+                "one rx_valid pulse occurs"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-008"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "TX_SELECTION_ONCE_PER_FRAME",
+              "objective": "Verify current frame is not affected by tx_data or tx_valid changes after frame-start selection",
+              "stimulus_concept": "Start frame with preload A, then change tx_data and tx_valid mid-frame",
+              "expected_behavior": "Current frame continues shifting originally selected byte only",
+              "key_pass_fail_criteria": [
+                "no mid-frame MISO corruption due to later tx changes"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-008"
+              ],
+              "dependencies": [
+                "A14"
+              ]
+            }
+          ]
+        },
+        {
+          "stage_id": 5,
+          "stage_name": "representative_data_path_checks",
+          "why_now": "After core mechanics and reporting are trusted, pattern variety can isolate bit-order and edge mistakes.",
+          "new_behavior_introduced": [
+            "multiple_data_patterns",
+            "stronger_msb_first_confidence"
+          ],
+          "preconditions": [
+            "stage_4_passed"
+          ],
+          "expected_observables": [
+            "correct bit ordering on RX and TX",
+            "no bit reversal or phase slip"
+          ],
+          "bug_localization_targets": [
+            "bit reversal",
+            "early or late shift",
+            "wrong sample/update edge",
+            "missing final bit capture"
+          ],
+          "checker_strength": "strong",
+          "planned_tests": [
+            {
+              "test_name": "DATA_PATTERN_ALL_ZERO",
+              "objective": "Confirm all-zero pattern handling",
+              "stimulus_concept": "MOSI 8'h00 and preload TX 8'h00",
+              "expected_behavior": "RX and TX both reflect all-zero pattern correctly",
+              "key_pass_fail_criteria": [
+                "rx_data == 8'h00",
+                "MISO sequence is all zero while enabled"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-003",
+                "REQ-SPI-004",
+                "REQ-SPI-007"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "DATA_PATTERN_ALL_ONE",
+              "objective": "Confirm all-one pattern handling",
+              "stimulus_concept": "MOSI 8'hFF and preload TX 8'hFF",
+              "expected_behavior": "RX and TX both reflect all-one pattern correctly",
+              "key_pass_fail_criteria": [
+                "rx_data == 8'hFF",
+                "MISO sequence is all one while enabled"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-003",
+                "REQ-SPI-004",
+                "REQ-SPI-007"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "DATA_PATTERN_WALKING_ONE",
+              "objective": "Detect bit-position and shift-order mistakes",
+              "stimulus_concept": "Use one-hot data patterns on RX and TX paths",
+              "expected_behavior": "One-hot position is preserved exactly MSB-first",
+              "key_pass_fail_criteria": [
+                "exact bit location is preserved"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-007"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "DATA_PATTERN_ALTERNATING",
+              "objective": "Detect edge-alignment issues",
+              "stimulus_concept": "Use alternating patterns such as 8'hAA and 8'h55",
+              "expected_behavior": "Alternation is preserved exactly",
+              "key_pass_fail_criteria": [
+                "no one-bit phase slip"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-001",
+                "REQ-SPI-003",
+                "REQ-SPI-004",
+                "REQ-SPI-007"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "MSB_FIRST_MAPPING_FOCUSED",
+              "objective": "Specifically isolate first-bit and last-bit mapping correctness",
+              "stimulus_concept": "Use asymmetric bytes such as 8'h81 or 8'h96",
+              "expected_behavior": "First sampled bit maps to bit7 and eighth to bit0",
+              "key_pass_fail_criteria": [
+                "exact mapping match"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-007"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "MISO_ONLY_CHANGES_ON_QUALIFIED_FALLS",
+              "objective": "Enforce the edge-accurate MISO transition restriction rather than inferring it only from byte sequences.",
+              "stimulus_concept": "Run a legal frame with a byte that causes multiple MISO transitions and observe miso_o across all relevant and irrelevant edges.",
+              "expected_behavior": "miso_o changes on qualified falling edges only after legal frame start; it remains stable across qualified rising edges.",
+              "key_pass_fail_criteria": [
+                "no MISO transition occurs on a qualified rising edge",
+                "all expected MISO transitions align with qualified falling edges only"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-001",
+                "REQ-SPI-004",
+                "REQ-SPI-008"
+              ],
+              "dependencies": []
+            }
+          ]
+        },
+        {
+          "stage_id": 6,
+          "stage_name": "boundary_and_corner_cases",
+          "why_now": "Adds completion-boundary behavior without mixing in abort or reset complexity.",
+          "new_behavior_introduced": [
+            "completion_on_8th_qualified_rising_edge",
+            "ignore_extra_clocks_after_completion",
+            "no_restart_until_cs_high"
+          ],
+          "preconditions": [
+            "stage_5_passed"
+          ],
+          "expected_observables": [
+            "completion occurs on 8th qualified rising edge",
+            "extra clocks do not create extra progress",
+            "frame re-arm requires cs_n high then low"
+          ],
+          "bug_localization_targets": [
+            "off_by_one completion",
+            "extra-shift bug",
+            "frame re-arm bug",
+            "multiple rx_valid pulse bug"
+          ],
+          "checker_strength": "strong",
+          "planned_tests": [
+            {
+              "test_name": "EIGHTH_EDGE_COMPLETES_FRAME",
+              "objective": "Confirm exact completion boundary on the 8th qualified rising edge",
+              "stimulus_concept": "Drive 8-bit legal frame with an identifiable final bit",
+              "expected_behavior": "Final bit is captured and frame completes exactly at bit 8",
+              "key_pass_fail_criteria": [
+                "rx_data includes correct final bit0",
+                "one completion event only"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-002",
+                "REQ-SPI-003",
+                "REQ-SPI-005",
+                "REQ-SPI-007"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "IGNORE_EXTRA_CLOCKS_AFTER_COMPLETION",
+              "objective": "Verify extra clocks while cs_n remains low do not create a new frame or extra completion",
+              "stimulus_concept": "Complete one frame, hold cs_n low, continue toggling sclk",
+              "expected_behavior": "No second completion and no further MISO advancement attributable to extra clocks",
+              "key_pass_fail_criteria": [
+                "exactly one rx_valid pulse",
+                "no second captured byte",
+                "no additional MISO shift progression"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-009"
+              ],
+              "dependencies": [
+                "A13"
+              ]
+            },
+            {
+              "test_name": "NO_NEW_FRAME_UNTIL_CS_HIGH",
+              "objective": "Verify a new frame cannot start without deselecting and reselecting cs_n",
+              "stimulus_concept": "Attempt more clocks after one completed frame before toggling cs_n high, then run a legal second frame after deselect/reselect",
+              "expected_behavior": "No second frame before cs_n high; second frame accepted after cs_n high then low",
+              "key_pass_fail_criteria": [
+                "second legal completion occurs only after high-low cs_n cycle"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-009"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "NO_MISO_SHIFT_AFTER_COMPLETE",
+              "objective": "Separate MISO post-completion hold behavior from rx_valid counting so a byte-sequence-only checker cannot miss extra shifting.",
+              "stimulus_concept": "Complete a frame with a byte that would visibly change if additional shifts occurred, then continue extra clocks with cs_n low.",
+              "expected_behavior": "miso_o exhibits no further shift progression attributable to the extra clocks once completion has occurred.",
+              "key_pass_fail_criteria": [
+                "no post-completion MISO advancement is observed",
+                "no new frame start or receive completion occurs"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-004",
+                "REQ-SPI-009"
+              ],
+              "dependencies": [
+                "A13"
+              ]
+            }
+          ]
+        },
+        {
+          "stage_id": 7,
+          "stage_name": "abort_reset_invalid_sequence_handling",
+          "why_now": "Nominal and boundary behavior are now stable enough that abnormal sequence failures can be localized cleanly.",
+          "new_behavior_introduced": [
+            "mid_frame_abort",
+            "reset_during_active_frame",
+            "illegal_start_ignore_behavior"
+          ],
+          "preconditions": [
+            "stage_6_passed"
+          ],
+          "expected_observables": [
+            "aborted partial frame produces no rx_valid",
+            "reset kills in-flight frame with no latent completion",
+            "ignored illegal start does not activate frame behavior",
+            "legal recovery works after abort/reset"
+          ],
+          "bug_localization_targets": [
+            "partial-byte leakage",
+            "bad completion suppression",
+            "reset cleanup failures",
+            "start-qualification errors"
+          ],
+          "checker_strength": "mixed_strong_and_assumption_based",
+          "planned_tests": [
+            {
+              "test_name": "MID_FRAME_ABORT_NO_RXVALID",
+              "objective": "Verify early cs_n deassertion aborts frame and suppresses completion",
+              "stimulus_concept": "Begin legal frame, shift fewer than 8 bits, then raise cs_n",
+              "expected_behavior": "No rx_valid and no complete byte reported",
+              "key_pass_fail_criteria": [
+                "rx_valid never pulses for the aborted frame"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-005"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "RESET_DURING_ACTIVE_FRAME",
+              "objective": "Verify asynchronous reset dominates mid-frame and clears partial progress",
+              "stimulus_concept": "Begin legal frame, shift a few bits, assert rst_n low, then recover and run a clean legal frame",
+              "expected_behavior": "Partial frame is discarded; post-reset behavior resumes from idle only",
+              "key_pass_fail_criteria": [
+                "no completion from pre-reset partial frame",
+                "reset-defined outputs visible during reset",
+                "later legal frame passes"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-005",
+                "REQ-SPI-011"
+              ],
+              "dependencies": [
+                "A11"
+              ]
+            },
+            {
+              "test_name": "ILLEGAL_START_LATE_CS_ASSERT",
+              "objective": "Verify an attempted frame is ignored when cs_n is not low and stable soon enough before the first attempted counted rising edge.",
+              "stimulus_concept": "Create a digitally obvious late-assertion violation away from package-boundary ambiguity.",
+              "expected_behavior": "No frame activation, no rx_valid, and miso_oe remains inactive until cs_n returns high and a later legal frame begins.",
+              "key_pass_fail_criteria": [
+                "no rx_valid pulse for the illegal attempt",
+                "miso_oe remains 0 for the illegal attempt",
+                "later legal retry after cs_n high-low succeeds"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-012"
+              ],
+              "dependencies": [
+                "A3",
+                "A9"
+              ]
+            },
+            {
+              "test_name": "ILLEGAL_START_CS_NOT_HELD_THROUGH_FIRST_RISE",
+              "objective": "Verify an attempted frame is ignored when cs_n is not held low through the first attempted counted rising edge.",
+              "stimulus_concept": "Deassert cs_n in a digitally obvious way before or through the first attempted rising edge, outside the exclusion window.",
+              "expected_behavior": "The attempted start is ignored and the DUT remains idle until a later legal re-arm sequence.",
+              "key_pass_fail_criteria": [
+                "no valid frame progression",
+                "bit counting does not manifest externally",
+                "later legal frame works only after cs_n returns high and falls low again"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-012"
+              ],
+              "dependencies": [
+                "A3",
+                "A9"
+              ]
+            },
+            {
+              "test_name": "ILLEGAL_START_IGNORES_EXTRA_EDGES_UNTIL_REARM",
+              "objective": "Verify once a digitally illegal start is rejected, additional sclk activity while cs_n remains low is still ignored until explicit re-arm.",
+              "stimulus_concept": "Cause an illegal start, continue toggling sclk with cs_n low, then re-arm with a clean high-low cycle and run a legal frame.",
+              "expected_behavior": "Ignored attempt remains ignored despite extra clocks; legal operation resumes only after re-arm.",
+              "key_pass_fail_criteria": [
+                "no rx_valid during ignored interval",
+                "no active MISO drive during ignored interval",
+                "exactly one valid completion from the later legal frame only"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-009",
+                "REQ-SPI-012"
+              ],
+              "dependencies": [
+                "A3",
+                "A9"
+              ]
+            },
+            {
+              "test_name": "ABORT_THEN_CLEAN_RECOVERY",
+              "objective": "Prove an aborted frame does not poison a later legal transaction",
+              "stimulus_concept": "Abort one frame, deselect/reselect, then run a clean legal frame",
+              "expected_behavior": "First frame suppressed, second frame completes normally",
+              "key_pass_fail_criteria": [
+                "exactly one valid completion corresponding to the second frame only"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-005",
+                "REQ-SPI-009"
+              ],
+              "dependencies": []
+            }
+          ]
+        },
+        {
+          "stage_id": 8,
+          "stage_name": "back_to_back_and_repeated_operation",
+          "why_now": "Repetition and next-frame behavior are stateful and are best checked after all single-frame outcomes are trusted.",
+          "new_behavior_introduced": [
+            "multiple_legal_frames",
+            "frame_to_frame_state_reuse_checks",
+            "practical_minimum_cs_high_gap"
+          ],
+          "preconditions": [
+            "stage_7_passed"
+          ],
+          "expected_observables": [
+            "one completion per legal frame",
+            "correct frame separation",
+            "preload changes affect later frame only"
+          ],
+          "bug_localization_targets": [
+            "stale state carry-over",
+            "broken frame re-arm",
+            "wrong tx/rx cross-frame behavior"
+          ],
+          "checker_strength": "strong_with_some_assumption_based_min_gap_checks",
+          "planned_tests": [
+            {
+              "test_name": "TWO_LEGAL_FRAMES_BACK_TO_BACK",
+              "objective": "Verify two complete frames separated by a clear cs_n high interval",
+              "stimulus_concept": "Run frame A, deselect, optionally update preload, run frame B",
+              "expected_behavior": "Two independent correct frame outcomes",
+              "key_pass_fail_criteria": [
+                "exactly two correct completions"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-005",
+                "REQ-SPI-008",
+                "REQ-SPI-009"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "MIN_CS_HIGH_REARM_PRACTICAL",
+              "objective": "Verify practical minimal re-arm behavior without assuming analog numbers not given in spec",
+              "stimulus_concept": "Use a small but clean digital cs_n high gap between frames",
+              "expected_behavior": "Next legal frame is accepted",
+              "key_pass_fail_criteria": [
+                "both frames complete correctly"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-009"
+              ],
+              "dependencies": [
+                "A3"
+              ]
+            },
+            {
+              "test_name": "FRAME_TO_FRAME_TX_UPDATE",
+              "objective": "Verify a new preload affects the next frame only",
+              "stimulus_concept": "Use preload A for frame 1, publish preload B before frame 2, then run frame 2",
+              "expected_behavior": "Frame 1 shifts A; frame 2 shifts B",
+              "key_pass_fail_criteria": [
+                "exact per-frame MISO bytes match selected preloads"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-008"
+              ],
+              "dependencies": [
+                "A10",
+                "A14"
+              ]
+            },
+            {
+              "test_name": "REPEATED_FRAMES_SEQUENCE",
+              "objective": "Check stability across several directed legal frames",
+              "stimulus_concept": "Run 4 to 8 legal frames with distinct TX/RX pairs",
+              "expected_behavior": "Each frame remains independent and correct",
+              "key_pass_fail_criteria": [
+                "all expected per-frame outcomes match",
+                "no missing or extra rx_valid pulses"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-005",
+                "REQ-SPI-007",
+                "REQ-SPI-008",
+                "REQ-SPI-009"
+              ],
+              "dependencies": []
+            },
+            {
+              "test_name": "NEXT_FRAME_RESPONSE_SEMANTIC",
+              "objective": "Verify a byte received in frame N can influence the transmit response of frame N+1 only, not the in-flight frame.",
+              "stimulus_concept": "Run frame N to receive a byte, update the next response through the intended environment/BFM path, then run frame N+1 and compare both frames.",
+              "expected_behavior": "Frame N uses its original selected transmit source; frame N+1 reflects the updated response source.",
+              "key_pass_fail_criteria": [
+                "no retroactive effect on frame N transmit behavior",
+                "frame N+1 transmit behavior matches the intended next-frame response"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-006",
+                "REQ-SPI-008"
+              ],
+              "dependencies": [
+                "A10",
+                "A15"
+              ]
+            }
+          ]
+        },
+        {
+          "stage_id": 9,
+          "stage_name": "stress_and_bfm_semantics",
+          "why_now": "After core behavior and clk-domain contracts are trusted, stress and BFM semantics can be checked without obscuring first-failure localization.",
+          "new_behavior_introduced": [
+            "clock_ratio_variation",
+            "collapse_behavior_stress",
+            "bfm_api_semantics",
+            "bfm_queue_and_expectation_checks"
+          ],
+          "preconditions": [
+            "stage_8_passed"
+          ],
+          "expected_observables": [
+            "nominal behavior remains correct across benign ratio changes",
+            "collapse tests honor latest-byte-only contract",
+            "BFM helper APIs preserve nominal protocol semantics",
+            "queue-driven and expectation-driven flows behave consistently with direct checkers"
+          ],
+          "bug_localization_targets": [
+            "hidden CDC sensitivity",
+            "dependence on one clock ratio",
+            "mismatch between core semantics and BFM helper behavior",
+            "queue ordering or expectation-hook semantic bugs"
+          ],
+          "checker_strength": "mixed",
+          "planned_tests": [
+            {
+              "test_name": "CLK_SCLK_RATIO_SWEEP",
+              "objective": "Verify nominal behavior is not tied to a single convenient clock ratio",
+              "stimulus_concept": "Re-run a subset of nominal tests across multiple clk:sclk ratios and phase offsets",
+              "expected_behavior": "Same logical outcomes remain valid",
+              "key_pass_fail_criteria": [
+                "selected nominal tests continue to pass across ratio sweep"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-010"
+              ],
+              "dependencies": [
+                "A2"
+              ]
+            },
+            {
+              "test_name": "RX_EVENT_COLLAPSE_LATEST_BYTE_ONLY",
+              "objective": "Verify the intentionally lossy non-backpressured RX contract under aggressive timing",
+              "stimulus_concept": "Drive multiple completed frames fast enough that clk-domain observation may collapse them",
+              "expected_behavior": "Latest completed byte may be the only preserved one and at most one rx_valid pulse may occur for the collapsed set",
+              "key_pass_fail_criteria": [
+                "checker accepts latest-only preservation",
+                "checker does not require one pulse per frame under collapse conditions"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-010"
+              ],
+              "dependencies": [
+                "A2",
+                "A6"
+              ]
+            },
+            {
+              "test_name": "BFM_SHORT_FRAME_INJECTION",
+              "objective": "Smoke-test BFM short-frame anomaly injection support",
+              "stimulus_concept": "Use BFM API to inject a short frame anomaly",
+              "expected_behavior": "Anomaly is injected and/or logged without redefining nominal protocol behavior",
+              "key_pass_fail_criteria": [
+                "expected anomaly indication present",
+                "adjacent nominal tests remain valid"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-006"
+              ],
+              "dependencies": [
+                "A12"
+              ]
+            },
+            {
+              "test_name": "BFM_EXTRA_CLOCK_INJECTION",
+              "objective": "Verify BFM extra-clock anomaly support aligns with core ignore-after-complete semantics",
+              "stimulus_concept": "Use BFM API to inject extra clocks after completion",
+              "expected_behavior": "No second valid completion is created",
+              "key_pass_fail_criteria": [
+                "anomaly path does not violate nominal ignore-after-complete rule"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-006",
+                "REQ-SPI-009"
+              ],
+              "dependencies": [
+                "A12"
+              ]
+            },
+            {
+              "test_name": "BFM_EXPECTATION_HOOK_SMOKE",
+              "objective": "Verify self-checking BFM expectation hook wiring after core behavior is trusted",
+              "stimulus_concept": "Run one nominal frame through BFM expectation API",
+              "expected_behavior": "Hook result agrees with direct external checkers",
+              "key_pass_fail_criteria": [
+                "no mismatch between hook and direct observation"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-006"
+              ],
+              "dependencies": [
+                "A12"
+              ]
+            },
+            {
+              "test_name": "BFM_DIRECT_VS_API_NOMINAL_EQUIVALENCE",
+              "objective": "Verify BFM task-driven nominal transactions preserve the same common protocol semantics as direct pin-level driving.",
+              "stimulus_concept": "Execute equivalent nominal frames once through direct drivers and once through BFM helper APIs, then compare observations.",
+              "expected_behavior": "Observed frame boundaries, MISO behavior, RX results, and completion behavior are equivalent for nominal use.",
+              "key_pass_fail_criteria": [
+                "no semantic mismatch between direct and BFM-driven nominal transfers"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-006"
+              ],
+              "dependencies": [
+                "A12",
+                "A15"
+              ]
+            },
+            {
+              "test_name": "BFM_QUEUE_TX_BYTE_SEQUENCE",
+              "objective": "Verify queued transmit bytes are consumed in frame order and do not corrupt nominal common semantics.",
+              "stimulus_concept": "Queue multiple distinct TX bytes through the BFM API and run consecutive legal frames.",
+              "expected_behavior": "Each frame consumes the expected queued byte in order; no frame consumes a later queued byte early.",
+              "key_pass_fail_criteria": [
+                "per-frame MISO bytes match queue order exactly",
+                "queue consumption is one response per completed frame"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-006"
+              ],
+              "dependencies": [
+                "A15"
+              ]
+            },
+            {
+              "test_name": "EXPECT_RX_BYTE_PASS_AND_FAIL_PATH",
+              "objective": "Verify the BFM expectation hook both passes correct traffic and detects intentional mismatches.",
+              "stimulus_concept": "Run one matching expected receive case and one intentionally mismatched case through expect_rx_byte.",
+              "expected_behavior": "The matching case passes cleanly and the mismatched case is reported by the expectation mechanism without redefining protocol semantics.",
+              "key_pass_fail_criteria": [
+                "expected-pass case reports success",
+                "expected-fail case is detected and surfaced by the hook"
+              ],
+              "relevant_spec_requirements": [
+                "REQ-SPI-006"
+              ],
+              "dependencies": [
+                "A12",
+                "A15"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    "testbench_architecture_plan": {
+      "recommended_style": {
+        "initial_style": "plain_systemverilog_directed_tb",
+        "rationale": [
+          "smallest debug surface",
+          "fastest bring-up",
+          "avoids premature UVM complexity"
+        ]
+      },
+      "top_level_strategy": {
+        "phase_a_target": "spi_slave_core",
+        "phase_b_extension": "spi_slave_bfm"
+      },
+      "generators": [
+        {
+          "name": "clk_generator",
+          "role": "free-running internal clock"
+        },
+        {
+          "name": "sclk_driver_or_generator",
+          "role": "transaction-controlled SPI clock with explicit edge counting; optional periodic mode for ratio sweep"
+        },
+        {
+          "name": "reset_driver",
+          "role": "reset-at-start and mid-frame reset support with controlled release waits"
+        }
+      ],
+      "driver_helpers": [
+        {
+          "name": "apply_reset",
+          "role": "assert/deassert reset and wait for post-release settling"
+        },
+        {
+          "name": "publish_tx_preload",
+          "role": "drive tx_data and tx_valid under controlled stability assumptions"
+        },
+        {
+          "name": "drive_legal_spi_frame",
+          "role": "drive one legal 8-bit frame with configurable MOSI byte and legal cs lead time"
+        },
+        {
+          "name": "drive_aborted_spi_frame",
+          "role": "terminate frame before 8th rising edge"
+        },
+        {
+          "name": "drive_illegal_start_attempt",
+          "role": "create digitally obvious illegal-start conditions away from exclusion windows"
+        },
+        {
+          "name": "drive_back_to_back_frames",
+          "role": "sequence multiple frames with controlled cs_n high spacing"
+        },
+        {
+          "name": "drive_bfm_nominal_frame",
+          "role": "exercise one nominal frame through the BFM task/API surface for semantic-equivalence checks"
+        },
+        {
+          "name": "queue_bfm_tx_bytes",
+          "role": "publish ordered BFM response bytes for queue-consumption tests"
+        },
+        {
+          "name": "expect_bfm_rx_byte",
+          "role": "invoke BFM expectation hooks for both positive and negative cases"
+        }
+      ],
+      "monitors": [
+        {
+          "name": "spi_output_monitor",
+          "role": "observe miso_o and miso_oe relative to sclk and cs_n to reconstruct transmitted sequence"
+        },
+        {
+          "name": "rx_monitor",
+          "role": "observe rx_valid pulse width, pulse timing, and sampled rx_data"
+        },
+        {
+          "name": "protocol_event_monitor",
+          "role": "infer frame boundaries, completion boundary, abort points, and extra-clock behavior from stimulus and outputs"
+        },
+        {
+          "name": "clk_domain_report_monitor",
+          "role": "correlate frame completion, rx_valid latency, and rx_data stability in the clk domain"
+        }
+      ],
+      "scoreboard_reference_model": {
+        "needed": true,
+        "initial_scope": "small_frame_level_predictor",
+        "rationale": [
+          "enough to predict expected TX byte, RX byte, and whether completion should occur",
+          "avoids building a heavy scoreboard before repeated-frame stages",
+          "must also predict exact clk-domain reporting behavior for single-completion directed tests"
+        ]
+      },
+      "useful_assertions": [
+        "rx_valid pulse width is exactly one clk cycle",
+        "rx_valid never asserts during reset",
+        "rx_valid never asserts for aborted frames",
+        "miso_oe is inactive when cs_n is high in core-focused tests",
+        "miso_o changes only on qualified falling edges during active frame driving",
+        "no second completion after extra clocks while cs_n remains low",
+        "first active MISO bit equals selected tx bit7 before first counted rising edge",
+        "no X or Z on synthesizable outputs after reset release",
+        "rx_valid asserts exactly one clk cycle after the completed frame is reported into the clk-domain interface contract",
+        "rx_data remains stable for the full clk cycle in which rx_valid is 1",
+        "miso_o does not change on qualified rising edges during active frame operation",
+        "after a digitally illegal start is ignored, additional sclk edges while cs_n remains low do not create frame progress until re-arm"
+      ],
+      "timeout_watchdog": {
+        "required": true,
+        "behaviors": [
+          "per-test timeout",
+          "per-frame completion timeout",
+          "rx_valid wait timeout"
+        ]
+      },
+      "implementation_phases": [
+        {
+          "phase": "A",
+          "contents": [
+            "directed TB",
+            "basic checkers",
+            "Stage 0 to Stage 3 only"
+          ]
+        },
+        {
+          "phase": "B",
+          "contents": [
+            "small frame predictor/scoreboard",
+            "Stage 4 to Stage 8"
+          ]
+        },
+        {
+          "phase": "C",
+          "contents": [
+            "BFM API semantic checks",
+            "Stage 9"
+          ]
+        }
+      ],
+      "static_non_tb_checks": {
+        "required_for_full_closure": true,
+        "checks": [
+          "lint_or_structural_review_that_spi_slave_core_uses_no_inout_ports",
+          "lint_or_structural_review_that_spi_slave_core_contains_no_internal_tristate_or_1bz_drive_on_miso",
+          "review_that_simulation_only_tasks_queues_logging_and_expectation_logic_remain_outside_spi_slave_core"
+        ]
+      }
+    },
+    "checker_strength_and_coverage_gaps": {
+      "checker_strength": {
+        "strict_spec_driven": [
+          "reset visible outputs",
+          "no X after reset release on synthesizable outputs",
+          "Mode 0 sample/update edge behavior",
+          "fixed 8-bit frame semantics",
+          "MSB-first mapping",
+          "DEFAULT_TX_BYTE fallback",
+          "single-cycle rx_valid pulse",
+          "abort suppresses rx_valid",
+          "ignore extra clocks after completion",
+          "frame re-arm requires cs_n high then low",
+          "reset suppresses completion from partial pre-reset state",
+          "exact rx_valid latency for a single observed completion",
+          "rx_data stability throughout the valid cycle",
+          "MISO transition restriction to qualified falling edges",
+          "digitally illegal start remains ignored until cs_n re-arm",
+          "BFM queue order and expectation-hook pass/fail semantics at the observable API level"
+        ],
+        "assumption_driven": [
+          "legal frame-start timing relative to T_CSS_MIN",
+          "exact digitally observable illegal-start classification",
+          "post-reset settling interval before legal traffic",
+          "practical minimum cs-high gap",
+          "collapse behavior under aggressive CDC timing"
+        ],
+        "observational_only": [
+          "internal CDC mailbox micro-architecture",
+          "internal frame_active/frame_complete/bit_count if not exposed",
+          "sub-cycle immediacy of miso_oe deassertion on cs_n high",
+          "exact inactive miso_o retained value when miso_oe is 0",
+          "detailed BFM logging internals unless explicitly exposed"
+        ]
+      },
+      "strongly_verifiable_from_spec": [
+        "nominal Mode 0 operation",
+        "8-bit legal frame behavior",
+        "RX bit mapping and MSB-first ordering",
+        "TX bit sequence for selected byte",
+        "DEFAULT_TX_BYTE fallback",
+        "single-cycle rx_valid",
+        "abort suppression",
+        "ignore-after-completion behavior",
+        "reset visible outputs and reset recovery",
+        "exact clk-domain receive reporting for single completions",
+        "edge-accurate MISO transition timing",
+        "digitally obvious illegal-start ignore behavior",
+        "BFM nominal semantic equivalence and queue order at the API level"
+      ],
+      "weakly_verifiable": [
+        "CDC correctness beyond observable contract",
+        "legal-start detection near timing boundaries",
+        "minimum cs-high re-arm interval without numeric spec",
+        "detailed BFM helper semantics"
+      ],
+      "not_safely_verifiable_until_clarified": [
+        "setup_hold_violation behavior at package-boundary exclusion windows",
+        "analog interpretation of T_CSS_MIN",
+        "exact sub-edge timing of immediate miso_oe deassertion",
+        "all negative-test obligations for BFM anomalies if only partially specified"
+      ],
+      "known_coverage_gaps": [
+        "No strong functional coverage claim should be made for unspecified analog timing windows",
+        "CDC event-collapse coverage should be tracked separately from nominal frame completion coverage",
+        "BFM anomaly coverage should be separated from core functional coverage",
+        "A pure black-box TB cannot prove coherent shadow-copy implementation, only its observable contract",
+        "Structural requirements such as REQ-SPI-011 require explicit non-TB closure items and must not be marked closed by waveform checks alone"
+      ]
+    },
+    "recommended_next_step_before_writing_code": {
+      "recommended_actions": [
+        "Freeze the checker interpretation for exact rx_valid latency and rx_data stability before any code generation",
+        "Implement Stage 0 through Stage 3 first so clk-domain reporting bugs are caught before broader functional expansion",
+        "Treat REQ-SPI-011 as requiring both simulation and structural closure items",
+        "Defer BFM queue and expectation semantics until core and reporting checks are green, then execute Stage 9 as a separate closure milestone"
+      ],
+      "rationale": [
+        "catches high-value off-by-one CDC/reporting bugs early",
+        "preserves failure localization",
+        "prevents TB-only closure claims for structural requirements",
+        "keeps BFM semantic debugging separate from core protocol debugging"
+      ]
+    },
+    "gap_review_summary": {
+      "overall_assessment": "usable_for_incremental_core_bringup_but_not_yet_sufficient_for_full_spec_closure_before_this_revision",
+      "after_revision_assessment": "sufficient_for_strong_black_box_verification_of_spi_slave_core_and_substantially_improved_for_spi_slave_bfm_semantics_with_explicit_remaining_non_tb_gaps_called_out",
+      "major_strengths": [
+        "Incremental stage ordering remains good for failure localization",
+        "Mode-0, 8-bit framing, abort, reset, and post-completion ignore behavior are directly exercised",
+        "CDC receive-path obligations now have explicit directed checks rather than stress-only coverage",
+        "BFM helper semantics are separated from core semantics and tested explicitly in later stages"
+      ],
+      "major_non_tb_gaps": [
+        "REQ-SPI-011 structural constraints still require lint or RTL structural review in addition to simulation",
+        "Package-boundary setup/hold exclusion behavior remains intentionally outside pass/fail functional closure",
+        "Observable checking cannot prove a specific internal CDC micro-architecture, only the contract"
+      ],
+      "closure_policy": {
+        "tb_closure": "black_box_behavioral_and_api_contract_closure",
+        "non_tb_closure": [
+          "rtl_structural_review_for_no_inout_or_internal_tristate",
+          "lint_or_pattern_check_for_simulation_only_construct_exclusion_from_core"
+        ]
+      }
+    },
+    "requirement_closure_matrix": {
+      "REQ-SPI-001": {
+        "status": "covered_strongly",
+        "evidence": [
+          "SINGLE_LEGAL_FRAME_PRELOADED_TX_MIN",
+          "DATA_PATTERN_ALTERNATING",
+          "MISO_ONLY_CHANGES_ON_QUALIFIED_FALLS"
+        ]
+      },
+      "REQ-SPI-002": {
+        "status": "covered_strongly",
+        "evidence": [
+          "SINGLE_LEGAL_FRAME_PRELOADED_TX_MIN",
+          "EIGHTH_EDGE_COMPLETES_FRAME"
+        ]
+      },
+      "REQ-SPI-003": {
+        "status": "covered_strongly",
+        "evidence": [
+          "SINGLE_LEGAL_FRAME_PRELOADED_TX_MIN",
+          "DATA_PATTERN_* family",
+          "EIGHTH_EDGE_COMPLETES_FRAME"
+        ]
+      },
+      "REQ-SPI-004": {
+        "status": "covered_strongly",
+        "evidence": [
+          "FIRST_BIT_PRESENT_BEFORE_FIRST_RISE",
+          "MISO_ONLY_CHANGES_ON_QUALIFIED_FALLS",
+          "NO_MISO_SHIFT_AFTER_COMPLETE"
+        ]
+      },
+      "REQ-SPI-005": {
+        "status": "covered_strongly",
+        "evidence": [
+          "RX_VALID_SINGLE_CYCLE_AND_LATENCY_EXACT",
+          "RX_DATA_STABLE_DURING_VALID",
+          "SINGLE_COMPLETION_NO_DOUBLE_PULSE",
+          "MID_FRAME_ABORT_NO_RXVALID"
+        ]
+      },
+      "REQ-SPI-006": {
+        "status": "covered_strongly_for_observable_api_semantics",
+        "evidence": [
+          "NEXT_FRAME_RESPONSE_SEMANTIC",
+          "BFM_DIRECT_VS_API_NOMINAL_EQUIVALENCE",
+          "BFM_QUEUE_TX_BYTE_SEQUENCE",
+          "EXPECT_RX_BYTE_PASS_AND_FAIL_PATH"
+        ]
+      },
+      "REQ-SPI-007": {
+        "status": "covered_strongly",
+        "evidence": [
+          "MSB_FIRST_MAPPING_FOCUSED",
+          "DATA_PATTERN_WALKING_ONE",
+          "EIGHTH_EDGE_COMPLETES_FRAME"
+        ]
+      },
+      "REQ-SPI-008": {
+        "status": "covered_strongly",
+        "evidence": [
+          "FIRST_BIT_PRESENT_BEFORE_FIRST_RISE",
+          "TX_SELECTION_ONCE_PER_FRAME",
+          "FRAME_TO_FRAME_TX_UPDATE",
+          "NEXT_FRAME_RESPONSE_SEMANTIC"
+        ]
+      },
+      "REQ-SPI-009": {
+        "status": "covered_strongly",
+        "evidence": [
+          "IGNORE_EXTRA_CLOCKS_AFTER_COMPLETION",
+          "NO_MISO_SHIFT_AFTER_COMPLETE",
+          "NO_NEW_FRAME_UNTIL_CS_HIGH",
+          "ILLEGAL_START_IGNORES_EXTRA_EDGES_UNTIL_REARM"
+        ]
+      },
+      "REQ-SPI-010": {
+        "status": "covered_strongly_for_contract_not_microarchitecture",
+        "evidence": [
+          "RX_VALID_SINGLE_CYCLE_AND_LATENCY_EXACT",
+          "RX_DATA_STABLE_DURING_VALID",
+          "SINGLE_COMPLETION_NO_DOUBLE_PULSE",
+          "RX_EVENT_COLLAPSE_LATEST_BYTE_ONLY"
+        ]
+      },
+      "REQ-SPI-011": {
+        "status": "requires_non_tb_structural_closure",
+        "evidence": [
+          "TB_CLK_RESET_SMOKE",
+          "TB_OUTPUT_CONNECTIVITY_SMOKE",
+          "static_non_tb_checks"
+        ]
+      },
+      "REQ-SPI-012": {
+        "status": "covered_strongly_for_digitally_obvious_cases_only",
+        "evidence": [
+          "ILLEGAL_START_LATE_CS_ASSERT",
+          "ILLEGAL_START_CS_NOT_HELD_THROUGH_FIRST_RISE",
+          "ILLEGAL_START_IGNORES_EXTRA_EDGES_UNTIL_REARM"
+        ]
+      }
+    }
+  },
+  "traceability_index": {
+    "requirements_used": [
+      "REQ-SPI-001",
+      "REQ-SPI-002",
+      "REQ-SPI-003",
+      "REQ-SPI-004",
+      "REQ-SPI-005",
+      "REQ-SPI-006",
+      "REQ-SPI-007",
+      "REQ-SPI-008",
+      "REQ-SPI-009",
+      "REQ-SPI-010",
+      "REQ-SPI-011",
+      "REQ-SPI-012"
+    ]
+  }
+}
