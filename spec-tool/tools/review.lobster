@@ -1,4 +1,4 @@
-# review.lobster — Hardware Specification Review Workflow
+# review.lobster — Hardware Specification Review Tool
 #
 # Flow: receive spec document → AI review → output structured JSON review
 #

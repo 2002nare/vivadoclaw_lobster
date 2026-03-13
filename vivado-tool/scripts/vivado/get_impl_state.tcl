@@ -1,6 +1,6 @@
 # get_impl_state.tcl — Collect implementation/bitstream state as JSON for LLM review
 # Environment:
-#   VIVADO_PROJECT_DIR — base output directory used by impl_split workflow
+#   VIVADO_PROJECT_DIR — base output directory used by impl_split tool
 #   VIVADO_TOP_MODULE  — top module / bitstream base name
 
 proc json_escape {s} {

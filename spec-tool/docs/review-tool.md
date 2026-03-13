@@ -1,4 +1,4 @@
-# review.lobster — Hardware Specification Review Workflow
+# review.lobster — Hardware Specification Review Tool
 
 ## Overview
 
@@ -47,9 +47,9 @@ export OPENCLAW_TOKEN=<your-token>              # Bearer token (REQUIRED)
 ## Usage
 
 ```bash
-cd spec-workflow
+cd spec-tool
 
-~/lobster/bin/lobster.js run --file workflows/review.lobster --args-json '{
+~/lobster/bin/lobster.js run --file tools/review.lobster --args-json '{
   "spec_document": "<full spec document text (JSON or YAML)>"
 }'
 ```
@@ -59,7 +59,7 @@ Reading from a file:
 ```bash
 SPEC=$(cat ../spec-stage/examples/uart_transceiver.spec.yaml)
 
-~/lobster/bin/lobster.js run --file workflows/review.lobster --args-json "$(jq -n --arg spec "$SPEC" '{"spec_document": $spec}')"
+~/lobster/bin/lobster.js run --file tools/review.lobster --args-json "$(jq -n --arg spec "$SPEC" '{"spec_document": $spec}')"
 ```
 
 ## Arguments (args)
@@ -152,8 +152,8 @@ Items the LLM reviews:
 ## Related Files
 
 ```
-spec-workflow/
-├── workflows/
+spec-tool/
+├── tools/
 │   └── review.lobster              # Workflow definition
 ├── scripts/
 │   └── llm_review.sh               # llm-task API caller
@@ -162,5 +162,5 @@ spec-workflow/
 ├── prompts/
 │   └── spec-review.md              # Review prompt
 └── docs/
-    └── review-workflow.md          # This document
+    └── review-tool.md          # This document
 ```
