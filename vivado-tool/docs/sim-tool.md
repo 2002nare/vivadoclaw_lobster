@@ -57,9 +57,9 @@ export OPENCLAW_TOKEN=<your-token>              # Bearer token (필수)
 ## 실행 방법
 
 ```bash
-cd vivado-workflow
+cd vivado-tool
 
-~/lobster/bin/lobster.js run --file workflows/sim.lobster --args-json '{
+~/lobster/bin/lobster.js run --file tools/sim.lobster --args-json '{
   "project_dir": "/home/appuser/projects/my_proj",
   "sim_top": "top_tb",
   "sim_time": "1us"
@@ -69,7 +69,7 @@ cd vivado-workflow
 ### 최소 실행 (기본값 사용)
 
 ```bash
-~/lobster/bin/lobster.js run --file workflows/sim.lobster --args-json '{
+~/lobster/bin/lobster.js run --file tools/sim.lobster --args-json '{
   "project_dir": "/home/appuser/projects/my_proj"
 }'
 ```
@@ -121,8 +121,8 @@ cd vivado-workflow
 ## 관련 파일
 
 ```
-vivado-workflow/
-├── workflows/
+vivado-tool/
+├── tools/
 │   └── sim.lobster                # 워크플로우 정의
 ├── scripts/
 │   ├── vivado_run.sh              # Vivado batch 래퍼
@@ -135,9 +135,9 @@ vivado-workflow/
 ├── prompts/
 │   └── sim-review.md              # 리뷰 프롬프트
 └── docs/
-    ├── init-workflow.md           # 프로젝트 초기화 워크플로우 문서
-    ├── sim-workflow.md            # 이 문서
-    └── impl-split-workflow.md     # 구현/bitstream 분리 워크플로우 문서
+    ├── init-tool.md           # 프로젝트 초기화 워크플로우 문서
+    ├── sim-tool.md            # 이 문서
+    └── impl-split-tool.md     # 구현/bitstream 분리 워크플로우 문서
 ```
 
 ## 테스트벤치 작성 팁

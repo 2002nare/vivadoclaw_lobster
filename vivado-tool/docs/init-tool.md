@@ -59,9 +59,9 @@ export OPENCLAW_TOKEN=<your-token>              # Bearer token (필수)
 ## 실행 방법
 
 ```bash
-cd vivado-workflow
+cd vivado-tool
 
-~/lobster/bin/lobster.js run --file workflows/init.lobster --args-json '{
+~/lobster/bin/lobster.js run --file tools/init.lobster --args-json '{
   "project_name": "my_proj",
   "part": "xc7a35tcpg236-1",
   "project_dir": "/home/appuser/projects/my_proj",
@@ -114,7 +114,7 @@ cd vivado-workflow
 - **절대 경로**: `project_dir`, `sources_json[].path`, `constraints_json[].path`
   - 모든 Vivado 관련 경로는 `/home/appuser/...` 형태의 절대 경로
 - **상대 경로**: 워크플로우 내부 스크립트 참조 (`scripts/vivado_run.sh`, `prompts/...`, `schemas/...`)
-  - `vivado-workflow/` 디렉토리 기준 상대 경로
+  - `vivado-tool/` 디렉토리 기준 상대 경로
 
 ## 출력
 
@@ -170,8 +170,8 @@ cd vivado-workflow
 ## 관련 파일
 
 ```
-vivado-workflow/
-├── workflows/
+vivado-tool/
+├── tools/
 │   └── init.lobster              # 워크플로우 정의
 ├── scripts/
 │   ├── vivado_run.sh             # Vivado batch 래퍼
@@ -192,9 +192,9 @@ vivado-workflow/
 │   ├── init-review.md            # 1차 리뷰 프롬프트
 │   └── init-review-cycle2.md     # 2차 리뷰 프롬프트
 └── docs/
-    ├── init-workflow.md          # 이 문서
-    ├── sim-workflow.md           # 시뮬레이션 워크플로우 문서
-    └── impl-split-workflow.md    # 구현/bitstream 분리 워크플로우 문서
+    ├── init-tool.md          # 이 문서
+    ├── sim-tool.md           # 시뮬레이션 워크플로우 문서
+    └── impl-split-tool.md    # 구현/bitstream 분리 워크플로우 문서
 ```
 
 ## 컨테이너 환경 참고

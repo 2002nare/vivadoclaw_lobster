@@ -62,9 +62,9 @@ export OPENCLAW_TOKEN=<your-token>              # (필수)
 ## 실행 방법
 
 ```bash
-cd vivado-workflow
+cd vivado-tool
 
-~/lobster/bin/lobster.js run --file workflows/impl_split.lobster --args-json '{
+~/lobster/bin/lobster.js run --file tools/impl_split.lobster --args-json '{
   "part": "xc7a35tcpg236-1",
   "project_dir": "/home/appuser/projects/fir_impl",
   "top_module": "fir_filter_basys3_top",
@@ -157,8 +157,8 @@ cd vivado-workflow
 ## 관련 파일
 
 ```text
-vivado-workflow/
-├── workflows/
+vivado-tool/
+├── tools/
 │   └── impl_split.lobster
 ├── scripts/
 │   ├── vivado_run.sh
@@ -172,7 +172,7 @@ vivado-workflow/
 ├── schemas/
 │   └── impl-review.schema.json
 └── docs/
-    └── impl-split-workflow.md
+    └── impl-split-tool.md
 ```
 
 ## 컨테이너 환경 참고

@@ -48,7 +48,7 @@ If you want to run workflows outside of vivadoclaw.ai, you'll need to set up the
 export OPENCLAW_URL=http://127.0.0.1:18789
 export OPENCLAW_TOKEN=<your-token>
 
-~/lobster/bin/lobster.js run --file vivado-workflow/workflows/init.lobster --args-json '{
+~/lobster/bin/lobster.js run --file vivado-tool/tools/init.lobster --args-json '{
   "project_name": "my_proj",
   "part": "xc7a35tcpg236-1",
   "project_dir": "/home/appuser/projects/my_proj",
@@ -57,7 +57,7 @@ export OPENCLAW_TOKEN=<your-token>
 }'
 ```
 
-See [docs/init-workflow.md](vivado-workflow/docs/init-workflow.md) for full documentation.
+See [docs/init-tool.md](vivado-tool/docs/init-tool.md) for full documentation.
 
 ## How it works
 
@@ -97,37 +97,37 @@ The current SPI example should be understood as a **spec-derived bring-up exampl
 
 | Workflow | Status | Description |
 |----------|--------|-------------|
-| `vivado-workflow/workflows/init.lobster` | **Done** | Create project, add sources/constraints, AI review |
-| `vivado-workflow/workflows/sim.lobster` | **Done** | Behavioral simulation with AI-assisted review |
-| `vivado-workflow/workflows/synth.lobster` | Planned | Run synthesis with AI-assisted error diagnosis |
-| `vivado-workflow/workflows/impl.lobster` | Planned | Place & route with timing review |
-| `vivado-workflow/workflows/bitstream.lobster` | Planned | Bitstream generation with final checks |
+| `vivado-tool/tools/init.lobster` | **Done** | Create project, add sources/constraints, AI review |
+| `vivado-tool/tools/sim.lobster` | **Done** | Behavioral simulation with AI-assisted review |
+| `vivado-tool/tools/synth.lobster` | Planned | Run synthesis with AI-assisted error diagnosis |
+| `vivado-tool/tools/impl.lobster` | Planned | Place & route with timing review |
+| `vivado-tool/tools/bitstream.lobster` | Planned | Bitstream generation with final checks |
 
 ### Vitis HLS
 
 | Workflow | Status | Description |
 |----------|--------|-------------|
-| `vitis-workflow/workflows/init-core.lobster` | **Done** | Stable HLS project initialization with result-file step handoff |
-| `vitis-workflow/workflows/init.lobster` | **Done** | HLS init plus AI review/auto-patch layer |
-| `vitis-workflow/workflows/sim.lobster` | **Done** | C simulation (`csim_design`) with structured state capture and final AI review |
-| `vitis-workflow/workflows/synth.lobster` | **Done** | HLS synthesis (`csynth_design`) with report extraction and final AI review |
-| `vitis-workflow/workflows/cosim.lobster` | **Done** | C/RTL co-simulation (`cosim_design`) with simulator/report capture and final AI review |
-| `vitis-workflow/workflows/export.lobster` | **Done** | RTL/IP export (`export_design`) with packaging artifact capture and final AI review |
+| `vitis-tool/tools/init-core.lobster` | **Done** | Stable HLS project initialization with result-file step handoff |
+| `vitis-tool/tools/init.lobster` | **Done** | HLS init plus AI review/auto-patch layer |
+| `vitis-tool/tools/sim.lobster` | **Done** | C simulation (`csim_design`) with structured state capture and final AI review |
+| `vitis-tool/tools/synth.lobster` | **Done** | HLS synthesis (`csynth_design`) with report extraction and final AI review |
+| `vitis-tool/tools/cosim.lobster` | **Done** | C/RTL co-simulation (`cosim_design`) with simulator/report capture and final AI review |
+| `vitis-tool/tools/export.lobster` | **Done** | RTL/IP export (`export_design`) with packaging artifact capture and final AI review |
 
 ## Vitis HLS Notes
 
 Recent validation work established a few practical rules:
 
 - `vitis_hls -f <script.tcl>` works reliably in batch mode
-- the stable init path is `vitis-workflow/workflows/init-core.lobster`
+- the stable init path is `vitis-tool/tools/init-core.lobster`
 - result-file handoff between steps is more reliable than scraping JSON from stdout
-- the review path in `vitis-workflow/workflows/init.lobster` now also completes end-to-end for a validated `vector_add` example
-- `vitis-workflow/workflows/sim.lobster` now runs `csim_design`, captures structured simulation state, and finishes with a report-only AI review
-- `vitis-workflow/workflows/synth.lobster` now runs `csynth_design`, extracts timing/resource summaries, and finishes with a report-only AI review
-- `vitis-workflow/workflows/cosim.lobster` now runs `cosim_design`, captures simulator/report state, and finishes with a report-only AI review
-- `vitis-workflow/workflows/export.lobster` now runs `export_design`, captures packaging artifacts, and finishes with a report-only AI review
+- the review path in `vitis-tool/tools/init.lobster` now also completes end-to-end for a validated `vector_add` example
+- `vitis-tool/tools/sim.lobster` now runs `csim_design`, captures structured simulation state, and finishes with a report-only AI review
+- `vitis-tool/tools/synth.lobster` now runs `csynth_design`, extracts timing/resource summaries, and finishes with a report-only AI review
+- `vitis-tool/tools/cosim.lobster` now runs `cosim_design`, captures simulator/report state, and finishes with a report-only AI review
+- `vitis-tool/tools/export.lobster` now runs `export_design`, captures packaging artifacts, and finishes with a report-only AI review
 
-See `vitis-workflow/docs/init-workflow.md`, `vitis-workflow/docs/sim-workflow.md`, `vitis-workflow/docs/synth-workflow.md`, `vitis-workflow/docs/cosim-workflow.md`, and `vitis-workflow/docs/export-workflow.md` for details.
+See `vitis-tool/docs/init-tool.md`, `vitis-tool/docs/sim-tool.md`, `vitis-tool/docs/synth-tool.md`, `vitis-tool/docs/cosim-tool.md`, and `vitis-tool/docs/export-tool.md` for details.
 
 ## Spec Stage — Hardware IP Design Specifications
 
@@ -178,18 +178,18 @@ spec-stage/
   templates/        Blank spec templates (start here)
   examples/         Complete spec examples
   domain-knowledge/ Board, protocol, and tool reference data
-vivado-workflow/
-  workflows/        Lobster workflow definitions for Vivado
+vivado-tool/
+  tools/            Lobster tool definitions for Vivado
   scripts/          Shell wrappers + Tcl scripts (one per Vivado action)
   schemas/          JSON schemas for structured LLM output
   prompts/          LLM review prompts
-  docs/             Per-workflow documentation
-vitis-workflow/
-  workflows/        Lobster workflow definitions for Vitis HLS
+  docs/             Per-tool documentation
+vitis-tool/
+  tools/            Lobster tool definitions for Vitis HLS
   scripts/          Shell wrappers + Tcl scripts (one per HLS action)
   schemas/          JSON schemas for structured LLM output
   prompts/          LLM review prompts
-  docs/             Per-workflow documentation
+  docs/             Per-tool documentation
 ```
 
 ---
