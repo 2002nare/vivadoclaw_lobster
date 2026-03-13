@@ -77,14 +77,31 @@ The `examples/` directory includes a full **AI Agent-driven hardware development
 
 See [`examples/spi_slave_basys3_from_spec/`](examples/spi_slave_basys3_from_spec/docs/README.md) for the SPI slave bring-up example on Basys3.
 
-## Modules
+## Stages
 
-| Module | Description | README |
-|--------|-------------|--------|
-| [`vivado-tool/`](vivado-tool/) | Vivado project init, simulation, implementation tools | [README](vivado-tool/README.md) |
-| [`vitis-tool/`](vitis-tool/) | Vitis HLS init, simulation, synthesis, cosim, export tools | [README](vitis-tool/README.md) |
-| [`spec-tool/`](spec-tool/) | Hardware spec review and auto-refinement tools | [README](spec-tool/README.md) |
-| [`spec-stage/`](spec-stage/) | Spec templates, schemas, examples, and domain knowledge | [README](spec-stage/README.md) |
+A **Stage** provides curated **templates, schemas, domain knowledge, and examples** for each phase of hardware development. Working through these templates with an AI agent produces far more accurate implementations downstream.
+
+> Contributions of your own templates are very welcome!
+
+| Stage | Description | README |
+|-------|-------------|--------|
+| [`spec-stage/`](spec-stage/) | Domain knowledge, spec templates, schemas, and worked examples for hardware spec authoring | [README](spec-stage/README.md) |
+
+**Example — spec-stage:** Contains board/protocol/tool domain knowledge and structured spec document templates. By filling in these templates collaboratively with an agent, you establish a clear design plan that carries through RTL generation, simulation, and synthesis with consistent results.
+
+## Tools
+
+A **Tool** provides a **deterministic workflow** for a specific build step. Instead of letting the LLM improvise commands, these tools run validated scripts in a fixed sequence — producing reproducible, reliable results every time.
+
+| Tool | Description | README |
+|------|-------------|--------|
+| [`vivado-tool/`](vivado-tool/) | Project creation, behavioral simulation, synthesis & bitstream generation | [README](vivado-tool/README.md) |
+| [`vitis-tool/`](vitis-tool/) | HLS project init, C simulation, synthesis, co-simulation, IP export | [README](vitis-tool/README.md) |
+| [`spec-tool/`](spec-tool/) | AI-powered spec review and auto-refinement | [README](spec-tool/README.md) |
+
+**Example — vivado-tool:** Vivado is driven by Tcl, and when OpenClaw generates Tcl on the fly, issues like webtalk hangs can stall the flow mid-run. The vivado-tool's pre-validated Tcl scripts and structured workflow eliminate these problems, giving you deterministic results.
+
+**Example — spec-tool:** The review tool invokes an `llm-task` that examines a spec and returns structured JSON issues (severity, location, suggestion). The refine tool then automatically patches the spec, prioritizing critical issues first.
 
 ---
 
