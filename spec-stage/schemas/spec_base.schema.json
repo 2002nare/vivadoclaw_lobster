@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://vivadoclaw.dev/schemas/spec_base.schema.json",
-  "title": "VivadoClaw Hardware Design Spec",
+  "$id": "https://rtlclaw.dev/schemas/spec_base.schema.json",
+  "title": "RTLclaw Hardware Design Spec",
   "description": "3-layer hardware design specification: Intent → Design Contract → Build/Tool",
   "type": "object",
   "required": [

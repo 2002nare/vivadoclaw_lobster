@@ -1,5 +1,5 @@
 # ============================================================================
-# VivadoClaw Hardware Design Spec — UART Transceiver
+# RTLclaw Hardware Design Spec — UART Transceiver
 # ============================================================================
 # Layer 1: Intent (project, intent)
 # Layer 2: Design Contract (architecture, functional_spec, rules, performance)

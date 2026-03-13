@@ -1,5 +1,5 @@
 # ============================================================================
-# VivadoClaw Hardware Design Spec — FIR Filter (rtl_module)
+# RTLclaw Hardware Design Spec — FIR Filter (rtl_module)
 # ============================================================================
 # Layer 1: Intent (project, intent)
 # Layer 2: Design Contract (architecture, functional_spec, rules, performance)

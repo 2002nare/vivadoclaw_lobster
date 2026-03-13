@@ -1,5 +1,5 @@
 # ============================================================================
-# VivadoClaw Hardware Design Spec — rtl_module Template
+# RTLclaw Hardware Design Spec — rtl_module Template
 # ============================================================================
 # Fill in required fields (marked ★), then progressively complete the rest.
 # Required fields: project.{name, design_kind, summary}, intent.goal,
