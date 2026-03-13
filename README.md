@@ -1,16 +1,16 @@
 <p align="center">
-  <img src="vivadoclaw.png" alt="VivadoClaw" width="400">
+  <img src="rtlclaw.png" alt="RTLclaw" width="400">
 </p>
 
-# VivadoClaw
+# RTLclaw
 
 AI-assisted Vivado FPGA workflows, built for **[vivadoclaw.ai](https://vivadoclaw.ai)**.
 
-> **Alpha** — Vivado init/simulation and Vitis HLS init/simulation workflows now work end-to-end. HLS synthesis/cosim/export and downstream Vivado implementation flows are the next layer.
+> Vivado (init, simulation, implementation/bitstream), Vitis HLS (init, simulation, synthesis, cosim, export), and spec review/refine tools — all working end-to-end.
 
 ## Try it on vivadoclaw.ai
 
-The easiest way to use VivadoClaw is through **[vivadoclaw.ai](https://vivadoclaw.ai)** — no local setup required.
+The easiest way to use RTLclaw is through **[vivadoclaw.ai](https://vivadoclaw.ai)** — no local setup required.
 
 **1. Onboard**
 
@@ -73,124 +73,18 @@ OpenClaw  --->  Lobster Workflow  --->  step 1: Tcl Script (Vivado action)
 
 ## End-to-end AI Agent example
 
-The `examples/` directory also includes a full **AI Agent-driven hardware development example** that shows what this stack can do in just a few hours of iterative work.
+The `examples/` directory includes a full **AI Agent-driven hardware development example**: spec definition, testbench planning, RTL generation, simulation, synthesis, implementation, and bitstream generation — all in one pipeline.
 
-Example:
-- `examples/spi_slave_basys3_from_spec/`
+See [`examples/spi_slave_basys3_from_spec/`](examples/spi_slave_basys3_from_spec/docs/README.md) for the SPI slave bring-up example on Basys3.
 
-That example captures an end-to-end pipeline:
-- **spec definition**
-- **testbench plan generation**
-- **testbench generation/refinement**
-- **RTL programming / implementation**
-- **behavioral simulation**
-- **synthesis / implementation**
-- **bitstream generation**
+## Modules
 
-In other words, it is not just a workflow demo in isolation — it is a concrete example of taking a structured spec, letting AI agents drive the intermediate steps, and landing on a board-targeted Vivado build artifact.
-
-The current SPI example should be understood as a **spec-derived bring-up example** rather than a fully final reference design, but it demonstrates the full pipeline from design intent to FPGA-ready output.
-
-## Workflows
-
-### Vivado
-
-| Workflow | Status | Description |
-|----------|--------|-------------|
-| `vivado-tool/tools/init.lobster` | **Done** | Create project, add sources/constraints, AI review |
-| `vivado-tool/tools/sim.lobster` | **Done** | Behavioral simulation with AI-assisted review |
-| `vivado-tool/tools/synth.lobster` | Planned | Run synthesis with AI-assisted error diagnosis |
-| `vivado-tool/tools/impl.lobster` | Planned | Place & route with timing review |
-| `vivado-tool/tools/bitstream.lobster` | Planned | Bitstream generation with final checks |
-
-### Vitis HLS
-
-| Workflow | Status | Description |
-|----------|--------|-------------|
-| `vitis-tool/tools/init-core.lobster` | **Done** | Stable HLS project initialization with result-file step handoff |
-| `vitis-tool/tools/init.lobster` | **Done** | HLS init plus AI review/auto-patch layer |
-| `vitis-tool/tools/sim.lobster` | **Done** | C simulation (`csim_design`) with structured state capture and final AI review |
-| `vitis-tool/tools/synth.lobster` | **Done** | HLS synthesis (`csynth_design`) with report extraction and final AI review |
-| `vitis-tool/tools/cosim.lobster` | **Done** | C/RTL co-simulation (`cosim_design`) with simulator/report capture and final AI review |
-| `vitis-tool/tools/export.lobster` | **Done** | RTL/IP export (`export_design`) with packaging artifact capture and final AI review |
-
-## Vitis HLS Notes
-
-Recent validation work established a few practical rules:
-
-- `vitis_hls -f <script.tcl>` works reliably in batch mode
-- the stable init path is `vitis-tool/tools/init-core.lobster`
-- result-file handoff between steps is more reliable than scraping JSON from stdout
-- the review path in `vitis-tool/tools/init.lobster` now also completes end-to-end for a validated `vector_add` example
-- `vitis-tool/tools/sim.lobster` now runs `csim_design`, captures structured simulation state, and finishes with a report-only AI review
-- `vitis-tool/tools/synth.lobster` now runs `csynth_design`, extracts timing/resource summaries, and finishes with a report-only AI review
-- `vitis-tool/tools/cosim.lobster` now runs `cosim_design`, captures simulator/report state, and finishes with a report-only AI review
-- `vitis-tool/tools/export.lobster` now runs `export_design`, captures packaging artifacts, and finishes with a report-only AI review
-
-See `vitis-tool/docs/init-tool.md`, `vitis-tool/docs/sim-tool.md`, `vitis-tool/docs/synth-tool.md`, `vitis-tool/docs/cosim-tool.md`, and `vitis-tool/docs/export-tool.md` for details.
-
-## Spec Stage — Hardware IP Design Specifications
-
-`spec-stage/` contains templates, domain knowledge, and examples for writing structured hardware design specs. These specs serve as the **single source of truth** between human designers and AI agents (RTL generation, review, repair).
-
-### 3-Layer Spec Architecture
-
-| Layer | Sections | Purpose |
-|-------|----------|---------|
-| **Layer 1: Intent** | `project`, `intent` | Why this design exists — goals, use cases, non-goals |
-| **Layer 2: Design Contract** | `architecture`, `functional_spec`, `rules`, `performance` | What the design does — interfaces, behavior, constraints |
-| **Layer 3: Build/Tool** | `target`, `tool_flow`, `implementation_constraints` | How to build it — FPGA part, tool versions, coding rules |
-| **Cross-cutting** | `verification`, `agent_guidance`, `traceability` | How to verify and guide AI agents |
-
-### Directory Structure
-
-```
-spec-stage/
-  schemas/
-    spec_base.schema.json    JSON Schema (v0.1) — validates all spec YAML files
-  templates/
-    rtl_module.spec.yaml     Blank template for rtl_module designs (fill in ★ fields)
-  examples/
-    fir_filter.spec.yaml     Complete example — pipelined FIR filter (DSP, streaming)
-    uart_transceiver.spec.yaml  Complete example — full-duplex UART (FSM, serial protocol)
-  domain-knowledge/
-    boards/                  Board-specific info (pin maps, clocking, peripherals)
-    protocols/               Protocol references (AXI, UART, SPI, I2C, ...)
-    tools/                   Tool-specific knowledge (Vivado, Vitis, simulators)
-```
-
-### Supported Design Kinds
-
-`rtl_module`, `rtl_system`, `axi_peripheral`, `streaming_pipeline`, `memory_mapped_accelerator`, `hls_kernel`, `block_design`, `soc_integration`, `board_io_design`, `verification_only`
-
-### Quick Start
-
-1. Copy the template: `cp spec-stage/templates/rtl_module.spec.yaml my_design.spec.yaml`
-2. Fill in required fields (marked ★): `project`, `intent.goal`, `target.platform`, `architecture.interfaces`, `functional_spec.behavior`, `verification.pass_criteria`, `acceptance_criteria`
-3. Progressively complete optional sections (`rules`, `performance`, `agent_guidance`, etc.)
-4. See [fir_filter.spec.yaml](spec-stage/examples/fir_filter.spec.yaml) and [uart_transceiver.spec.yaml](spec-stage/examples/uart_transceiver.spec.yaml) for fully worked examples
-
-## Structure
-
-```
-spec-stage/
-  schemas/          JSON Schema for spec validation
-  templates/        Blank spec templates (start here)
-  examples/         Complete spec examples
-  domain-knowledge/ Board, protocol, and tool reference data
-vivado-tool/
-  tools/            Lobster tool definitions for Vivado
-  scripts/          Shell wrappers + Tcl scripts (one per Vivado action)
-  schemas/          JSON schemas for structured LLM output
-  prompts/          LLM review prompts
-  docs/             Per-tool documentation
-vitis-tool/
-  tools/            Lobster tool definitions for Vitis HLS
-  scripts/          Shell wrappers + Tcl scripts (one per HLS action)
-  schemas/          JSON schemas for structured LLM output
-  prompts/          LLM review prompts
-  docs/             Per-tool documentation
-```
+| Module | Description | README |
+|--------|-------------|--------|
+| [`vivado-tool/`](vivado-tool/) | Vivado project init, simulation, implementation tools | [README](vivado-tool/README.md) |
+| [`vitis-tool/`](vitis-tool/) | Vitis HLS init, simulation, synthesis, cosim, export tools | [README](vitis-tool/README.md) |
+| [`spec-tool/`](spec-tool/) | Hardware spec review and auto-refinement tools | [README](spec-tool/README.md) |
+| [`spec-stage/`](spec-stage/) | Spec templates, schemas, examples, and domain knowledge | [README](spec-stage/README.md) |
 
 ---
 

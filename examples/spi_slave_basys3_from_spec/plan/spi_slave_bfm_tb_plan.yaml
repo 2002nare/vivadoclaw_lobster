@@ -3,8 +3,8 @@
   "plan_name": "spi_slave_bfm_incremental_testbench_plan",
   "plan_version": 2,
   "source_spec": {
-    "yaml": "/home/appuser/vivadoclaw_lobster/spec-stage/examples/spi_slave_bfm.spec.yaml",
-    "json": "/home/appuser/vivadoclaw_lobster/spec-stage/examples/spi_slave_bfm.spec.json"
+    "yaml": "/home/appuser/RTLclaw/spec-stage/examples/spi_slave_bfm.spec.yaml",
+    "json": "/home/appuser/RTLclaw/spec-stage/examples/spi_slave_bfm.spec.json"
   },
   "scope": {
     "planning_only": true,
