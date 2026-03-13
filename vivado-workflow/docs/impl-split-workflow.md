@@ -43,11 +43,13 @@ Phase 3: 상태 수집 + AI 리뷰
 
 ## 사전 조건
 
-### 환경 변수
+### 환경 변수 (필수 — 실행 전 반드시 설정)
+
+> **경고**: `OPENCLAW_URL`과 `OPENCLAW_TOKEN`은 `llm_review.sh`를 사용하는 모든 워크플로우 실행 전에 반드시 export 되어야 합니다. 이 변수 없이는 워크플로우가 실패합니다. 우회하거나 생략하지 마세요 — 대체 경로는 없습니다. 매번 명시적으로 설정하세요.
 
 ```bash
-export OPENCLAW_URL=http://127.0.0.1:18789
-export OPENCLAW_TOKEN=<your-token>
+export OPENCLAW_URL=http://127.0.0.1:18789    # (필수)
+export OPENCLAW_TOKEN=<your-token>              # (필수)
 ```
 
 ### 필수 도구

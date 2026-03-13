@@ -28,12 +28,19 @@ REQUEST_BODY=$(jq -n \
       prompt: $prompt,
       input: $input,
       schema: $schema,
-      maxTokens: 16000
+      maxTokens: 16000,
+      timeoutMs: 300000
     }
   }')
 
+REQUEST_LOG=$(mktemp)
+RESPONSE_LOG=$(mktemp)
+printf '%s\n' "$REQUEST_BODY" > "$REQUEST_LOG"
+echo "llm_review.sh: raw_request saved to $REQUEST_LOG" >&2
+
 # Call OpenClaw API directly
 RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+  --max-time 310 \
   -X POST "${OPENCLAW_URL}/tools/invoke" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${OPENCLAW_TOKEN}" \
@@ -41,6 +48,8 @@ RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
 
 HTTP_STATUS=$(echo "$RESPONSE" | tail -1 | sed 's/HTTP_STATUS://')
 BODY=$(echo "$RESPONSE" | sed '$d')
+printf '%s\n' "$BODY" > "$RESPONSE_LOG"
+echo "llm_review.sh: raw_response saved to $RESPONSE_LOG" >&2
 
 if [ "$HTTP_STATUS" -ge 400 ] 2>/dev/null; then
   echo "llm_review.sh: HTTP $HTTP_STATUS" >&2
